@@ -7,6 +7,8 @@ import { Lensflare, LensflareElement } from './three/Lensflare.js';
 import { animateFingers } from './util/fingers.js';
 import { TeacherView } from './teacherView.js';
 
+
+
 var camera, controls, scene, renderer, pianoKeys, player, futurBoxs = [], pianoFloor = 21, ground;
 var pianistModel, skeleton, pianoModel, panel, settings, lights = [];
 var t1 = Date.now(), previouscurrentTime = -1, currentTime = 0, clock = new THREE.Clock();
