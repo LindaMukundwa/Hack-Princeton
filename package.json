@@ -1,0 +1,11 @@
+{
+  "name": "piano-teacher-3d",
+  "version": "1.0.0",
+  "description": "3D Piano Teacher with hand tracking",
+  "main": "js/main.js",
+  "dependencies": {
+    "@tensorflow/tfjs-core": "^4.12.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.12.0",
+    "@tensorflow-models/handpose": "^0.1.0"
+  }
+}

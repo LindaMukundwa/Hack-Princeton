@@ -46,7 +46,7 @@
 	</div>
 	<!-- ./Preloader -->
 	<div id="info">
-		Space Pianist MIDI Player made with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> by <a href="https://github.com/thmnl" target="_blank" rel="noopener">thmnl</a></br>
+		Space Pianist MIDI Player made with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a></br>
 		Drag and drop your MIDI files to play.
 		<div id="songname"></div>
 		<div id="pianoLoading"></div>
@@ -68,6 +68,11 @@
 	<script>
 		var static_url = "./"; //for django adapt {% static %}
 	</script>
+	<!-- TensorFlow.js -->
+	 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
 	<script type="module" src="js/main.js"></script>
 </body>
 </html>

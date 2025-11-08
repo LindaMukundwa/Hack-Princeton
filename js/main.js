@@ -5,12 +5,14 @@ import { GLTFLoader } from './three/loaders/GLTFLoader.js';
 import { DRACOLoader } from './three/loaders/DRACOLoader.js';
 import { Lensflare, LensflareElement } from './three/Lensflare.js';
 import { animateFingers } from './util/fingers.js';
+import { TeacherView } from './teacherView.js';
 
 var camera, controls, scene, renderer, pianoKeys, player, futurBoxs = [], pianoFloor = 21, ground;
 var pianistModel, skeleton, pianoModel, panel, settings, lights = [];
 var t1 = Date.now(), previouscurrentTime = -1, currentTime = 0, clock = new THREE.Clock();
 var mixamorig, rigHelper, headTarget = 0, futurAverage, headTargetTime, headStarty, lastBoxRefresh = 0;
 var notesState = [new Array(88), new Array(88)];
+let teacherView;
 
 document.getElementById("body").addEventListener("drop", dropHandler);
 document.getElementById("body").addEventListener("dragover", dragOverHandler);
@@ -607,6 +609,14 @@ let createGui = function () {
         'Show skeleton': false,
         'Animate Fingers': true,
         'Show piano model': true,
+        'Enable Teacher Mode': false,
+        'Calibrate Teacher': () => {
+            if (teacherView) {
+                teacherView.calibrate();
+            } else {
+                alert('Enable Teacher Mode first');
+            }
+        }
     }
     playerFolder.add(settings, "Volume", 0, 100, 1).onChange(SetVolume);
     playerFolder.add(settings, "Pause/Play");
@@ -615,6 +625,10 @@ let createGui = function () {
     playerFolder.add(settings, "Show notes").onChange(showNotes);
     playerFolder.add(settings, "Show Ground").onChange(showGround);
     playerFolder.add(settings, "Open Midi File");
+    let teacherFolder = panel.addFolder('Teacher Mode');
+    teacherFolder.add(settings, "Enable Teacher Mode").onChange(toggleTeacherMode);
+    teacherFolder.add(settings, "Calibrate Teacher");
+
     const elements = document.getElementsByClassName("closed");
     for (let el of elements) {
         el.className = "open";
@@ -748,6 +762,15 @@ let pausePlayStop = function (stop) {
         createFuturBox(true);
     } else {
         MIDI.Player.resume();
+    }
+}
+
+let toggleTeacherMode = function(enabled) {
+    if (enabled && !teacherView) {
+        teacherView = new TeacherView();
+    } else if (!enabled && teacherView) {
+        teacherView.dispose();
+        teacherView = null;
     }
 }
 
