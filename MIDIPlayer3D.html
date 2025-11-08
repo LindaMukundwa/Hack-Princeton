@@ -65,6 +65,11 @@
             </div>
         </div>
     </div>
+    <!-- Sheet Music Display (OSMD) -->
+    <div id="sheet-music-container" style="position: fixed; top: 80px; left: 10px; width: 400px; height: 300px; background: rgba(255,255,255,0.95); z-index: 1000; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow: auto;"></div>
+
+    <!-- OpenSheetMusicDisplay -->
+    <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.4/build/opensheetmusicdisplay.min.js"></script>
     <script>
         var static_url = "./"; //for django adapt {% static %}
     </script>
@@ -82,5 +87,59 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
     
     <script type="module" src="js/main.js"></script>
+    <script>
+    // Sheet music logi: load and render MusicXML via OSMD
+    // call showSheetMusic(midiFileName) when a MIDI file is loaded/played
+    let osmd = null;
+    async function showSheetMusic(midiFileName) {
+        console.log('Showing sheet music for:', midiFileName); // Debug log
+        const container = document.getElementById('sheet-music-container');
+        
+        // Initialize OSMD if needed
+        if (!osmd) {
+            osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(container, {
+                drawingParameters: 'compact',
+                autoResize: true,
+                drawTitle: true
+            });
+        }
+
+        try {
+            // Only proceed if sheet music is enabled in settings
+            if (window.settings && !window.settings['Show sheet music']) {
+                container.style.display = 'none';
+                return;
+            }
+            
+            container.style.display = 'block';
+            
+            // 1. Search Flat.io for a matching score
+            console.log('Searching Flat.io for:', midiFileName); // Debug log
+            const searchRes = await fetch(`/api/flat/search?q=${encodeURIComponent(midiFileName)}`);
+            if (!searchRes.ok) throw new Error('Flat.io search failed');
+            const searchData = await searchRes.json();
+            if (!searchData || !searchData.length) throw new Error('No sheet music found on Flat.io');
+            
+            // 2. Get the first score's MusicXML
+            const scoreId = searchData[0].id;
+            console.log('Found score ID:', scoreId); // Debug log
+            const xmlRes = await fetch(`/api/flat/musicxml?id=${encodeURIComponent(scoreId)}`);
+            if (!xmlRes.ok) throw new Error('Failed to fetch MusicXML from Flat.io');
+            const musicXML = await xmlRes.text();
+            
+            await osmd.load(musicXML);
+            osmd.render();
+        } catch (e) {
+            container.innerHTML = '<div style="color:red;padding:1em;">Sheet music unavailable.<br>' + e.message + '</div>';
+        }
+    }
+    function hideSheetMusic() {
+        const container = document.getElementById('sheet-music-container');
+        container.style.display = 'none';
+        if (osmd) osmd.clear();
+    }
+    // To sync playback position call osmd.cursor.show() and osmd.cursor.next() as MIDI plays
+    // See main.js for integration.
+    </script>
 </body>
 </html>

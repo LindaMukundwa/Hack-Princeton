@@ -21,6 +21,11 @@ function rangeCheck(notesState, min, max) {
 }
 
 function animateFingers(notesState, rigHelper, mixamorig, track, animate) {
+    // Skip animation if teacher mode is active so the teacher mode handles its own animations
+    if (window.settings && window.settings["Enable Teacher Mode"]) {
+        return;
+    }
+
     let helper = track == 0 ? rigHelper.right : rigHelper.left;
     let average = helper.average;
     let modificator = track == 0 ? 1 : -1;

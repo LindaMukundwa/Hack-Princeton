@@ -611,6 +611,7 @@ let createGui = function () {
         'Show skeleton': false,
         'Animate Fingers': true,
         'Show piano model': true,
+        'Show sheet music': true,
         'Enable Teacher Mode': false,
         'Calibrate Teacher': () => {
             if (teacherView) {
@@ -626,6 +627,18 @@ let createGui = function () {
     playerFolder.add(settings, "Previous Song");
     playerFolder.add(settings, "Show notes").onChange(showNotes);
     playerFolder.add(settings, "Show Ground").onChange(showGround);
+    playerFolder.add(settings, "Show sheet music").onChange(function(visible) {
+        const container = document.getElementById('sheet-music-container');
+        if (visible) {
+            container.style.display = 'block';
+            // If there's a current song playing, show its sheet music
+            if (songname && songname[songid % songname.length]) {
+                showSheetMusic(songname[songid % songname.length] + '.mid');
+            }
+        } else {
+            hideSheetMusic();
+        }
+    });
     playerFolder.add(settings, "Open Midi File");
     let teacherFolder = panel.addFolder('Teacher Mode');
     teacherFolder.add(settings, "Enable Teacher Mode").onChange(toggleTeacherMode);
@@ -647,6 +660,10 @@ let openMidiFile = function() {
         let reader = new FileReader();
         let name = file.name.replace(".mid", " ");
         name = name.replace(/_/g, " ");
+        // Show sheet music for this MIDI file
+        if (typeof showSheetMusic === 'function') {
+            showSheetMusic(file.name);
+        }
         reader.onload = function (event) {
             if (event.target.result.startsWith("data:audio/mid;base64") || event.target.result.startsWith("data:audio/midi;base64")) {
                 if (songid % songname.length != songname.length - 1) {
@@ -739,6 +756,10 @@ function dropHandler(ev) {
     let reader = new FileReader();
     let name = file.name.replace(".mid", " ");
     name = name.replace(/_/g, " ");
+    // Show sheet music for this MIDI file
+    if (typeof showSheetMusic === 'function') {
+        showSheetMusic(file.name);
+    }
     reader.onload = function (event) {
         if (event.target.result.startsWith("data:audio/mid;base64") || event.target.result.startsWith("data:audio/midi;base64")) {
             if (songid % songname.length != songname.length - 1) {
@@ -816,6 +837,8 @@ eventjs.add(window, "load", function (event) {
             init();
             player = MIDI.Player;
             MIDI.setVolume(0, 20);
+            // Make settings globally accessible
+            window.settings = settings;
             player.loadFile(song[songid % song.length]);
             addTimecode();
             player.addListener(function (data) {
@@ -870,6 +893,12 @@ let MIDIPlayerPercentage = function (player) {
         previouscurrentTime = 1.5;
         player.loadFile(song[id]); // load MIDI
         addTimecode();
+            // Show sheet music for this MIDI file
+            if (typeof showSheetMusic === 'function') {
+                // Try to get the file name from songname array if available
+                let midiName = songname[id] || '';
+                showSheetMusic(midiName.trim() + '.mid');
+            }
         player.start();
     };
     player.setAnimation(function (data, element) {
@@ -880,11 +909,28 @@ let MIDIPlayerPercentage = function (player) {
             let id = ++songid % song.length;
             player.loadFile(song[id], player.start); // load MIDI
             addTimecode();
+                // Show sheet music for this MIDI file
+                if (typeof showSheetMusic === 'function') {
+                    let midiName = songname[id] || '';
+                    showSheetMusic(midiName.trim() + '.mid');
+                }
         }
         // display the information to the user
         timeCursor.style.width = (percent * 100) + "%";
         time1.innerHTML = timeFormatting(now);
         time2.innerHTML = "-" + timeFormatting(end - now);
+
+            // Sheet music cursor sync (stub):
+            // If OSMD and osmd.cursor exist, sync to playback position
+            if (window.osmd && osmd.cursor) {
+                // Example: osmd.cursor.show(); osmd.cursor.next();
+                // maybe map MIDI time to MusicXML position here
+            }
     });
+
+    // Hide sheet music when playback stops (optional)
+    if (typeof hideSheetMusic === 'function') {
+        player.onStop = hideSheetMusic;
+    }
     window.player = player;
 };

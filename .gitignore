@@ -3,3 +3,4 @@
 .vscode/
 .vs/
 js/model/*
+/node_modules/
