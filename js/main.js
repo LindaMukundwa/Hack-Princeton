@@ -117,7 +117,7 @@ function init() {
     loader = new GLTFLoader();
 
     loader.setDRACOLoader(dracoLoader);
-    loader.load('../model/GrandPianoRecoloredWKM.glb', function (gltf) {
+    loader.load('./model/GrandPianoRecoloredWKM.glb', function (gltf) {
         document.getElementById("pianoLoading").innerHTML = "";
         pianoModel = gltf.scene;
         pianoModel.position.set(1, -30.8 + pianoFloor, -53);
@@ -159,7 +159,7 @@ function init() {
 
     });
     //pianist model 
-    loader.load('../model/Pianist.glb', function (gltf) {
+    loader.load('./model/Pianist.glb', function (gltf) {
 
         pianistModel = gltf.scene;
         pianistModel.scale.set(35, 35, 35);
@@ -189,7 +189,7 @@ function init() {
     // lights
     let textureLoader = new THREE.TextureLoader();
 
-    let textureFlare0 = textureLoader.load('../images/lensflare0.png');
+    let textureFlare0 = textureLoader.load('./images/lensflare0.png');
     let ambient = new THREE.AmbientLight(0xffffff, 0.5);
     scene.add(ambient);
     lights[0] = addLight(305.73, 100, 69.8);
@@ -212,12 +212,12 @@ function init() {
 
     // skybox
     let materialArray = [];
-    let texture_ft = new THREE.TextureLoader().load('../images/corona_ft.png');
-    let texture_bk = new THREE.TextureLoader().load('../images/corona_bk.png');
-    let texture_up = new THREE.TextureLoader().load('../images/corona_up.png');
-    let texture_dn = new THREE.TextureLoader().load('../images/corona_dn.png');
-    let texture_rt = new THREE.TextureLoader().load('../images/corona_rt.png');
-    let texture_lf = new THREE.TextureLoader().load('../images/corona_lf.png');
+    let texture_ft = new THREE.TextureLoader().load('./images/corona_ft.png');
+    let texture_bk = new THREE.TextureLoader().load('./images/corona_bk.png');
+    let texture_up = new THREE.TextureLoader().load('./images/corona_up.png');
+    let texture_dn = new THREE.TextureLoader().load('./images/corona_dn.png');
+    let texture_rt = new THREE.TextureLoader().load('./images/corona_rt.png');
+    let texture_lf = new THREE.TextureLoader().load('./images/corona_lf.png');
 
     materialArray.push(new THREE.MeshBasicMaterial({ map: texture_ft }));
     materialArray.push(new THREE.MeshBasicMaterial({ map: texture_bk }));
