@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invisible Piano - Dual Camera</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body class="bg-gray-900 min-h-screen p-4">
+    <!-- Calibration Modal -->
+    <div id="calibrationModal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+        <div class="bg-gray-800 p-8 rounded-lg max-w-md text-center">
+            <h2 class="text-3xl font-bold text-white mb-4">🎹 Calibration Setup</h2>
+            <div class="text-left mb-4 p-3 bg-gray-700 rounded text-sm">
+                <div class="font-bold text-blue-400 mb-2">Camera Setup:</div>
+                <div class="text-gray-300 space-y-1">
+                    📹 <span class="text-green-400">Top camera</span>: Overhead, looking down at desk<br/>
+                    📹 <span class="text-purple-400">Side camera</span>: Level with desk, facing your hands
+                </div>
+            </div>
+            <p class="text-gray-300 mb-4">Place both hands FLAT on your desk surface</p>
+            <p class="text-sm text-yellow-400 mb-4">The side camera will learn the Y position when fingertips touch the desk</p>
+            <div id="calibrationCountdown" class="text-6xl font-bold text-blue-400 mb-4">5</div>
+            <button id="startCalibration" class="bg-blue-500 hover:bg-blue-600 text-white px-8 py-3 rounded-lg font-bold text-xl">
+                START CALIBRATION
+            </button>
+            <button id="skipCalibration" class="mt-3 bg-gray-600 hover:bg-gray-700 text-white px-6 py-2 rounded-lg font-bold text-sm">
+                SKIP (Use Defaults)
+            </button>
+            <div id="calibrationStatus" class="mt-4 text-yellow-400 hidden"></div>
+            <div id="handsDetectedIndicator" class="mt-4 text-sm hidden">
+                <span class="text-gray-400">Side camera sees: </span>
+                <span id="handsDetectedCount" class="text-green-400 font-bold">0</span>
+                <span class="text-gray-400"> hands</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Draw Keyboard Area Modal -->
+    <div id="drawModal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50 hidden">
+        <div class="max-w-4xl w-full p-4">
+            <div class="bg-gray-800 p-8 rounded-lg text-center mb-4">
+                <h2 class="text-3xl font-bold text-white mb-4">Draw Your Keyboard Area</h2>
+                <p class="text-gray-300 mb-2">Click and drag on the TOP camera to create your playing area</p>
+                <p class="text-sm text-gray-400">This is where the overhead camera will track finger positions</p>
+            </div>
+            <div class="relative">
+                <canvas id="drawCanvas" class="w-full border-4 border-blue-500 rounded-lg cursor-crosshair"></canvas>
+            </div>
+            <div class="flex gap-4 mt-4">
+                <button id="confirmArea" class="flex-1 bg-green-500 hover:bg-green-600 text-white px-8 py-3 rounded-lg font-bold hidden">
+                    CONFIRM KEYBOARD AREA
+                </button>
+                <button id="useDefaultArea" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-8 py-3 rounded-lg font-bold">
+                    USE DEFAULT AREA (Bottom of Screen)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="text-4xl font-bold text-white mb-2">Invisible Piano - Dual Camera</h1>
+            <p class="text-gray-400">Top camera = Position tracking • Side camera = Press trigger (Y-axis)</p>
+            <p class="text-xs text-gray-500 mt-1">Touch the desk to play • Move fingers left/right to change notes</p>
+        </div>
+
+        <!-- Dual Camera Display -->
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <!-- Top/Overhead Camera (Position Detection) -->
+            <div class="relative bg-black rounded-lg overflow-hidden shadow-2xl">
+                <div class="absolute top-2 left-2 bg-green-600 text-white px-3 py-1 rounded text-sm font-bold z-10">
+                    TOP CAMERA (Position Tracker)
+                </div>
+                <video id="webcamTop" class="hidden"></video>
+                <canvas id="outputTop" class="w-full"></canvas>
+            </div>
+
+            <!-- Side/Level Camera (Press Detection) -->
+            <div class="relative bg-black rounded-lg overflow-hidden shadow-2xl">
+                <div class="absolute top-2 left-2 bg-purple-600 text-white px-3 py-1 rounded text-sm font-bold z-10">
+                    SIDE CAMERA (Y-Axis Press Trigger)
+                </div>
+                <div class="absolute top-2 right-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs font-mono">
+                    Desk Y: <span id="deskYValue" class="text-yellow-400">Not Set</span>
+                </div>
+                <video id="webcamSide" class="hidden"></video>
+                <canvas id="outputSide" class="w-full"></canvas>
+            </div>
+        </div>
+
+        <!-- Debug Info -->
+        <div class="p-4 bg-gray-800 rounded-lg">
+            <div class="grid grid-cols-4 gap-4 text-sm font-mono">
+                <div>
+                    <span class="text-gray-400">Status:</span>
+                    <span id="status" class="text-green-400 ml-2">Initializing...</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">Last Note:</span>
+                    <span id="lastNote" class="text-blue-400 ml-2">None</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">Top Hands:</span>
+                    <span id="handsCountTop" class="text-yellow-400 ml-2">0</span>
+                    <span class="text-gray-400 text-xs ml-1">(tracking)</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">Side Hands:</span>
+                    <span id="handsCountSide" class="text-purple-400 ml-2">0</span>
+                    <span class="text-gray-400 text-xs ml-1">(triggering)</span>
+                </div>
+            </div>
+            <div class="mt-3 p-3 bg-gray-700 rounded text-xs">
+                <div class="font-bold text-white mb-1">🎯 How It Works:</div>
+                <div class="text-gray-300">
+                    <span class="text-green-400">● Top Camera (Green)</span>: Tracks WHERE your fingers are (X position)<br/>
+                    <span class="text-purple-400">● Side Camera (Purple)</span>: Detects WHEN you press down using Y-axis (vertical position)<br/>
+                    <span class="text-blue-400">● System</span>: Side camera Y reaches desk level → looks up X position → plays note!
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // IMPROVED PIANO SYNTHESIS
+        // ============================================
+        class PianoSynth {
+            constructor() {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                this.activeNotes = new Map();
+            }
+
+            playNote(frequency, keyIndex) {
+                if (this.activeNotes.has(keyIndex)) return;
+
+                const now = this.audioContext.currentTime;
+                const duration = 2.0;
+
+                this.createOscillator(frequency, 0.5, now, duration);
+                this.createOscillator(frequency * 2, 0.25, now, duration);
+                this.createOscillator(frequency * 3, 0.15, now, duration);
+                this.createOscillator(frequency * 4, 0.1, now, duration);
+
+                this.activeNotes.set(keyIndex, true);
+                setTimeout(() => this.activeNotes.delete(keyIndex), duration * 1000);
+            }
+
+            createOscillator(freq, volume, startTime, duration) {
+                const osc = this.audioContext.createOscillator();
+                const gain = this.audioContext.createGain();
+                
+                osc.connect(gain);
+                gain.connect(this.audioContext.destination);
+                
+                osc.frequency.value = freq;
+                osc.type = 'triangle';
+                
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(volume, startTime + 0.01);
+                gain.gain.exponentialRampToValueAtTime(volume * 0.7, startTime + 0.1);
+                gain.gain.exponentialRampToValueAtTime(volume * 0.3, startTime + 0.5);
+                gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+                
+                osc.start(startTime);
+                osc.stop(startTime + duration);
+            }
+        }
+
+        // ============================================
+        // PIANO KEYS
+        // ============================================
+        const PIANO_KEYS = [
+            { note: 'C4', freq: 261.63, label: 'C' },
+            { note: 'D4', freq: 293.66, label: 'D' },
+            { note: 'E4', freq: 329.63, label: 'E' },
+            { note: 'F4', freq: 349.23, label: 'F' },
+            { note: 'G4', freq: 392.00, label: 'G' },
+            { note: 'A4', freq: 440.00, label: 'A' },
+            { note: 'B4', freq: 493.88, label: 'B' },
+            { note: 'C5', freq: 523.25, label: 'C5' }
+        ];
+
+        // ============================================
+        // DUAL CAMERA PRESS DETECTOR (Y-AXIS BASED)
+        // ============================================
+        class DualCameraPressDetector {
+            constructor() {
+                this.deskSurfaceY = new Map(); // Side camera Y-axis baseline (desk surface level)
+                this.fingerPositions = new Map(); // Top camera positions (X, Y)
+                this.pressThreshold = 0.03; // How far below baseline Y = definite press
+                this.cooldownTime = 200;
+                this.lastPressTime = new Map();
+            }
+
+            // CALIBRATION: Set desk surface Y position when fingers are flat on desk
+            setDeskSurfaceY(fingerId, yValue) {
+                this.deskSurfaceY.set(fingerId, yValue);
+                console.log(`✓ Desk surface Y set for ${fingerId}: ${yValue.toFixed(4)}`);
+            }
+
+            // Get average desk Y for display
+            getAverageDeskY() {
+                if (this.deskSurfaceY.size === 0) return null;
+                const values = Array.from(this.deskSurfaceY.values());
+                return values.reduce((a, b) => a + b, 0) / values.length;
+            }
+
+            // TOP CAMERA: Continuously update finger positions (X only, we track Y for area check)
+            updatePosition(fingerId, x, y) {
+                this.fingerPositions.set(fingerId, { 
+                    x, 
+                    y, 
+                    timestamp: performance.now() 
+                });
+            }
+
+            // SIDE CAMERA: Detect when finger touches desk using Y-axis (PRIMARY TRIGGER)
+            checkPress(fingerId, currentY, timestamp) {
+                // Need baseline to detect press
+                if (!this.deskSurfaceY.has(fingerId)) {
+                    return null; // No baseline yet
+                }
+
+                const deskY = this.deskSurfaceY.get(fingerId);
+                
+                // Y-axis: Higher values = lower position (toward desk)
+                // When finger is at or below desk level, Y >= deskY
+                const distanceFromDesk = currentY - deskY;
+                
+                const lastPress = this.lastPressTime.get(fingerId) || 0;
+                const timeSinceLastPress = timestamp - lastPress;
+
+                // TRIGGER: Finger at or below desk surface (Y >= deskY - threshold)
+                const isTouchingDesk = distanceFromDesk >= -this.pressThreshold;
+                const notInCooldown = timeSinceLastPress > this.cooldownTime;
+
+                if (isTouchingDesk && notInCooldown) {
+                    this.lastPressTime.set(fingerId, timestamp);
+                    
+                    // Look up position from top camera
+                    const pos = this.fingerPositions.get(fingerId);
+                    
+                    if (pos && (timestamp - pos.timestamp) < 150) { // Position is recent
+                        console.log(`🎹 PRESS DETECTED: ${fingerId} at X=${pos.x.toFixed(2)}, Y_side=${currentY.toFixed(3)}, Desk_Y=${deskY.toFixed(3)}, Dist=${distanceFromDesk.toFixed(3)}`);
+                        return { 
+                            pressed: true, 
+                            x: pos.x, 
+                            y: pos.y,
+                            fingerId: fingerId,
+                            sideY: currentY,
+                            deskY: deskY
+                        };
+                    } else {
+                        console.warn(`⚠️ Press detected but no position data for ${fingerId}`);
+                        return null; // Have press but no position
+                    }
+                }
+
+                return null; // No press detected
+            }
+        }
+
+        // ============================================
+        // GLOBAL STATE
+        // ============================================
+        const synth = new PianoSynth();
+        const detector = new DualCameraPressDetector();
+        
+        const videoTop = document.getElementById('webcamTop');
+        const videoSide = document.getElementById('webcamSide');
+        const canvasTop = document.getElementById('outputTop');
+        const canvasSide = document.getElementById('outputSide');
+        const ctxTop = canvasTop.getContext('2d');
+        const ctxSide = canvasSide.getContext('2d');
+        const drawCanvas = document.getElementById('drawCanvas');
+        const drawCtx = drawCanvas.getContext('2d');
+
+        let calibrationComplete = false;
+        let drawingComplete = false;
+        let keyboardArea = null;
+        let keyPressAnimations = new Map();
+        let isDrawing = false;
+        let drawStart = null;
+        let camerasReady = false;
+
+        // ============================================
+        // DUAL CAMERA SETUP
+        // ============================================
+        let cameraDeviceIds = [];
+
+        async function initCameras() {
+            document.getElementById('status').textContent = 'Finding cameras...';
+
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                devices.forEach(device => {
+                    if (device.kind === 'videoinput' && cameraDeviceIds.length < 2) {
+                        cameraDeviceIds.push(device.deviceId);
+                        console.log(`Found camera: ${device.label}`);
+                    }
+                });
+
+                if (cameraDeviceIds.length < 2) {
+                    alert(`Only found ${cameraDeviceIds.length} camera(s). Two cameras required. Using same camera for both views.`);
+                    if (cameraDeviceIds.length === 1) {
+                        cameraDeviceIds.push(cameraDeviceIds[0]); // Use same camera twice
+                    }
+                }
+
+                // Start both cameras
+                const streamTop = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: cameraDeviceIds[0] }, width: 1280, height: 720 },
+                    audio: false
+                });
+                videoTop.srcObject = streamTop;
+                await videoTop.play();
+
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                const streamSide = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: cameraDeviceIds[1] }, width: 1280, height: 720 },
+                    audio: false
+                });
+                videoSide.srcObject = streamSide;
+                await videoSide.play();
+
+                camerasReady = true;
+                document.getElementById('status').textContent = 'Cameras ready!';
+                
+                // Initialize MediaPipe
+                initMediaPipe();
+
+            } catch (err) {
+                console.error('Camera error:', err);
+                alert('Camera access failed. Make sure you granted permissions and are using HTTPS/localhost.');
+            }
+        }
+
+        // ============================================
+        // MEDIAPIPE SETUP
+        // ============================================
+        let handsTop, handsSide;
+
+        function initMediaPipe() {
+            // Top camera (position detection)
+            handsTop = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            handsTop.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+            handsTop.onResults(onResultsTop);
+
+            // Side camera (press detection)
+            handsSide = new Hands({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            handsSide.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+            handsSide.onResults(onResultsSide);
+
+            // Start processing
+            processFrames();
+        }
+
+        async function processFrames() {
+            if (camerasReady) {
+                await handsTop.send({ image: videoTop });
+                await handsSide.send({ image: videoSide });
+            }
+            requestAnimationFrame(processFrames);
+        }
+
+        // ============================================
+        // TOP CAMERA RESULTS (Position Tracking ONLY)
+        // ============================================
+        function onResultsTop(results) {
+            const width = canvasTop.width = results.image.width;
+            const height = canvasTop.height = results.image.height;
+
+            ctxTop.save();
+            ctxTop.clearRect(0, 0, width, height);
+            ctxTop.scale(-1, 1);
+            ctxTop.translate(-width, 0);
+            ctxTop.drawImage(results.image, 0, 0, width, height);
+            ctxTop.restore();
+
+            // Update draw canvas during drawing phase
+            if (!drawingComplete && calibrationComplete && !isDrawing) {
+                drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+                drawCtx.drawImage(results.image, 0, 0, drawCanvas.width, drawCanvas.height);
+            }
+
+            // Draw keyboard overlay
+            if (drawingComplete && keyboardArea) {
+                drawPianoKeys();
+            }
+
+            // ONLY track positions - NEVER trigger sound
+            if (results.multiHandLandmarks && drawingComplete) {
+                document.getElementById('handsCountTop').textContent = results.multiHandLandmarks.length;
+                
+                results.multiHandLandmarks.forEach((landmarks, handIndex) => {
+                    drawHandLandmarks(landmarks, width, height, ctxTop, '#00ff00'); // Green for tracking
+
+                    // Update all fingertip positions for lookup by side camera
+                    const fingerTips = [4, 8, 12, 16, 20]; // Thumb, Index, Middle, Ring, Pinky
+                    fingerTips.forEach((tipIndex, fingerNum) => {
+                        const landmark = landmarks[tipIndex];
+                        const fingerId = `hand${handIndex}_finger${fingerNum}`;
+                        
+                        // Store normalized position (0-1 range)
+                        detector.updatePosition(fingerId, 1 - landmark.x, landmark.y);
+                    });
+                });
+            }
+
+            ctxTop.restore();
+        }
+
+        // ============================================
+        // SIDE CAMERA RESULTS (Press Detection - Y-AXIS TRIGGER)
+        // ============================================
+        function onResultsSide(results) {
+            const width = canvasSide.width = results.image.width;
+            const height = canvasSide.height = results.image.height;
+
+            ctxSide.save();
+            ctxSide.clearRect(0, 0, width, height);
+            ctxSide.drawImage(results.image, 0, 0, width, height);
+
+            // Update calibration counter
+            if (!calibrationComplete) {
+                const handsCount = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+                const countEl = document.getElementById('handsDetectedCount');
+                if (countEl) {
+                    countEl.textContent = handsCount;
+                    countEl.className = handsCount > 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold';
+                }
+            }
+
+            // CALIBRATION: Capture baseline Y-values when hands are flat on desk
+            if (window.captureBaselineNow && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                let totalY = 0;
+                let count = 0;
+                
+                results.multiHandLandmarks.forEach((landmarks, handIndex) => {
+                    const fingerTips = [4, 8, 12, 16, 20]; // All fingertips
+                    fingerTips.forEach((tipIndex, fingerNum) => {
+                        const fingerId = `hand${handIndex}_finger${fingerNum}`;
+                        const yValue = landmarks[tipIndex].y;
+                        detector.setDeskSurfaceY(fingerId, yValue);
+                        totalY += yValue;
+                        count++;
+                    });
+                });
+                
+                window.captureBaselineNow = false;
+                
+                const avgY = totalY / count;
+                const statusEl = document.getElementById('calibrationStatus');
+                statusEl.textContent = `✓ Desk surface calibrated! Average Y: ${avgY.toFixed(3)}`;
+                statusEl.classList.add('text-green-400');
+                
+                // Update desk Y display
+                document.getElementById('deskYValue').textContent = avgY.toFixed(3);
+                
+                setTimeout(finishCalibration, 1000);
+            }
+
+            // Draw desk surface line if calibrated
+            const avgDeskY = detector.getAverageDeskY();
+            if (avgDeskY !== null) {
+                ctxSide.strokeStyle = '#00ff00';
+                ctxSide.lineWidth = 3;
+                ctxSide.setLineDash([10, 5]);
+                ctxSide.beginPath();
+                const lineY = avgDeskY * height;
+                ctxSide.moveTo(0, lineY);
+                ctxSide.lineTo(width, lineY);
+                ctxSide.stroke();
+                ctxSide.setLineDash([]);
+                
+                // Label
+                ctxSide.fillStyle = '#00ff00';
+                ctxSide.font = 'bold 16px Arial';
+                ctxSide.fillText('DESK SURFACE', 10, lineY - 10);
+            }
+
+            // PRESS DETECTION: This is where notes are triggered!
+            if (results.multiHandLandmarks && drawingComplete && keyboardArea) {
+                document.getElementById('handsCountSide').textContent = results.multiHandLandmarks.length;
+                
+                results.multiHandLandmarks.forEach((landmarks, handIndex) => {
+                    drawHandLandmarks(landmarks, width, height, ctxSide, '#ff00ff'); // Purple for press detection
+
+                    const fingerTips = [4, 8, 12, 16, 20]; // All fingertips
+                    const timestamp = performance.now();
+
+                    fingerTips.forEach((tipIndex, fingerNum) => {
+                        const landmark = landmarks[tipIndex];
+                        const fingerId = `hand${handIndex}_finger${fingerNum}`;
+
+                        // CHECK FOR PRESS using Y-axis (Primary Trigger)
+                        const pressResult = detector.checkPress(fingerId, landmark.y, timestamp);
+                        
+                        if (pressResult) {
+                            // Press detected! Now determine which key from position
+                            const normalizedX = pressResult.x; // 0-1 range from top camera
+                            
+                            // Check if finger is within keyboard area
+                            const keyboardStartX = keyboardArea.x / canvasTop.width;
+                            const keyboardEndX = (keyboardArea.x + keyboardArea.width) / canvasTop.width;
+                            
+                            if (normalizedX >= keyboardStartX && normalizedX <= keyboardEndX) {
+                                // Calculate which key
+                                const relativeX = (normalizedX - keyboardStartX) / (keyboardEndX - keyboardStartX);
+                                const keyIndex = Math.floor(relativeX * PIANO_KEYS.length);
+                                
+                                if (keyIndex >= 0 && keyIndex < PIANO_KEYS.length) {
+                                    const key = PIANO_KEYS[keyIndex];
+                                    
+                                    // PLAY THE NOTE!
+                                    synth.playNote(key.freq, keyIndex);
+                                    keyPressAnimations.set(keyIndex, timestamp);
+                                    setTimeout(() => keyPressAnimations.delete(keyIndex), 150);
+                                    
+                                    // Update UI
+                                    document.getElementById('lastNote').textContent = `${key.note} (${pressResult.fingerId})`;
+                                    
+                                    console.log(`🎵 Played ${key.note} - Finger: ${pressResult.fingerId}, Key: ${keyIndex}, Y: ${pressResult.sideY.toFixed(3)}`);
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+
+            ctxSide.restore();
+        }
+
+        // ============================================
+        // CALIBRATION
+        // ============================================
+        let calibrationTimeout = null;
+
+        document.getElementById('startCalibration').addEventListener('click', () => {
+            let countdown = 5;
+            const countdownEl = document.getElementById('calibrationCountdown');
+            const statusEl = document.getElementById('calibrationStatus');
+            const buttonEl = document.getElementById('startCalibration');
+            const skipBtn = document.getElementById('skipCalibration');
+            const handsIndicator = document.getElementById('handsDetectedIndicator');
+            
+            buttonEl.disabled = true;
+            buttonEl.classList.add('opacity-50');
+            skipBtn.classList.add('hidden');
+            statusEl.classList.remove('hidden');
+            handsIndicator.classList.remove('hidden');
+            statusEl.textContent = 'Keep hands flat on desk...';
+
+            const interval = setInterval(() => {
+                countdown--;
+                countdownEl.textContent = countdown;
+                
+                if (countdown === 0) {
+                    clearInterval(interval);
+                    countdownEl.textContent = 'GO!';
+                    statusEl.textContent = 'Capturing desk surface Y position...';
+                    
+                    setTimeout(() => {
+                        window.captureBaselineNow = true;
+                        
+                        calibrationTimeout = setTimeout(() => {
+                            if (!calibrationComplete) {
+                                statusEl.textContent = '⚠️ No hands detected. Click SKIP.';
+                                statusEl.classList.add('text-red-400');
+                                skipBtn.classList.remove('hidden');
+                                window.captureBaselineNow = false;
+                            }
+                        }, 3000);
+                    }, 500);
+                }
+            }, 1000);
+        });
+
+        document.getElementById('skipCalibration').addEventListener('click', () => {
+            // Set default desk Y values (middle-lower area of frame)
+            for (let h = 0; h < 2; h++) {
+                for (let f = 0; f < 5; f++) {
+                    const fingerId = `hand${h}_finger${f}`;
+                    detector.setDeskSurfaceY(fingerId, 0.65); // Default to ~65% down the frame
+                }
+            }
+            document.getElementById('deskYValue').textContent = '0.650 (default)';
+            finishCalibration();
+        });
+
+        function finishCalibration() {
+            if (calibrationTimeout) clearTimeout(calibrationTimeout);
+            calibrationComplete = true;
+            document.getElementById('calibrationModal').style.display = 'none';
+            document.getElementById('drawModal').classList.remove('hidden');
+            document.getElementById('status').textContent = 'Draw keyboard area...';
+            
+            setTimeout(() => {
+                const rect = canvasTop.getBoundingClientRect();
+                drawCanvas.width = canvasTop.width;
+                drawCanvas.height = canvasTop.height;
+                drawCanvas.style.width = rect.width + 'px';
+                drawCanvas.style.height = rect.height + 'px';
+            }, 100);
+        }
+
+        // ============================================
+        // DRAW KEYBOARD AREA
+        // ============================================
+        drawCanvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            const rect = drawCanvas.getBoundingClientRect();
+            const scaleX = drawCanvas.width / rect.width;
+            const scaleY = drawCanvas.height / rect.height;
+            drawStart = {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        });
+
+        drawCanvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return;
+            
+            const rect = drawCanvas.getBoundingClientRect();
+            const scaleX = drawCanvas.width / rect.width;
+            const scaleY = drawCanvas.height / rect.height;
+            const currentX = (e.clientX - rect.left) * scaleX;
+            const currentY = (e.clientY - rect.top) * scaleY;
+            
+            drawCtx.drawImage(videoTop, 0, 0, drawCanvas.width, drawCanvas.height);
+            drawCtx.strokeStyle = '#3b82f6';
+            drawCtx.lineWidth = 4;
+            drawCtx.strokeRect(drawStart.x, drawStart.y, currentX - drawStart.x, currentY - drawStart.y);
+        });
+
+        drawCanvas.addEventListener('mouseup', (e) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const rect = drawCanvas.getBoundingClientRect();
+            const scaleX = drawCanvas.width / rect.width;
+            const scaleY = drawCanvas.height / rect.height;
+            const endX = (e.clientX - rect.left) * scaleX;
+            const endY = (e.clientY - rect.top) * scaleY;
+            
+            keyboardArea = {
+                x: Math.min(drawStart.x, endX),
+                y: Math.min(drawStart.y, endY),
+                width: Math.abs(endX - drawStart.x),
+                height: Math.abs(endY - drawStart.y)
+            };
+            
+            document.getElementById('confirmArea').classList.remove('hidden');
+        });
+
+        document.getElementById('confirmArea').addEventListener('click', () => {
+            drawingComplete = true;
+            document.getElementById('drawModal').style.display = 'none';
+            document.getElementById('status').textContent = 'Ready to play!';
+        });
+
+        document.getElementById('useDefaultArea').addEventListener('click', () => {
+            keyboardArea = {
+                x: canvasTop.width * 0.1,
+                y: canvasTop.height * 0.7,
+                width: canvasTop.width * 0.8,
+                height: canvasTop.height * 0.2
+            };
+            drawingComplete = true;
+            document.getElementById('drawModal').style.display = 'none';
+            document.getElementById('status').textContent = 'Ready to play!';
+        });
+
+        // ============================================
+        // DRAW FUNCTIONS
+        // ============================================
+        function drawPianoKeys() {
+            if (!keyboardArea) return;
+
+            const keyWidth = keyboardArea.width / PIANO_KEYS.length;
+
+            PIANO_KEYS.forEach((key, index) => {
+                const x = keyboardArea.x + (index * keyWidth);
+                const y = keyboardArea.y;
+                const isPressed = keyPressAnimations.has(index);
+
+                ctxTop.fillStyle = isPressed ? '#3b82f6' : 'rgba(255, 255, 255, 0.3)';
+                ctxTop.fillRect(x, y, keyWidth - 2, keyboardArea.height);
+
+                ctxTop.strokeStyle = isPressed ? '#60a5fa' : 'rgba(255, 255, 255, 0.6)';
+                ctxTop.lineWidth = 3;
+                ctxTop.strokeRect(x, y, keyWidth - 2, keyboardArea.height);
+
+                ctxTop.fillStyle = '#ffffff';
+                ctxTop.font = 'bold 20px Arial';
+                ctxTop.textAlign = 'center';
+                ctxTop.fillText(key.label, x + keyWidth / 2, y + keyboardArea.height / 2);
+            });
+        }
+
+        function drawHandLandmarks(landmarks, width, height, ctx, color = '#00ff00') {
+            const connections = [
+                [0,1],[1,2],[2,3],[3,4],
+                [0,5],[5,6],[6,7],[7,8],
+                [5,9],[9,10],[10,11],[11,12],
+                [9,13],[13,14],[14,15],[15,16],
+                [13,17],[17,18],[18,19],[19,20],
+                [0,17]
+            ];
+
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+
+            connections.forEach(([start, end]) => {
+                const s = landmarks[start];
+                const e = landmarks[end];
+                ctx.beginPath();
+                ctx.moveTo(s.x * width, s.y * height);
+                ctx.lineTo(e.x * width, e.y * height);
+                ctx.stroke();
+            });
+
+            landmarks.forEach((lm, i) => {
+                const x = lm.x * width;
+                const y = lm.y * height;
+                const isTip = [4, 8, 12, 16, 20].includes(i);
+                
+                ctx.beginPath();
+                ctx.arc(x, y, isTip ? 8 : 5, 0, 2 * Math.PI);
+                ctx.fillStyle = isTip ? '#ff0000' : color;
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+        }
+
+        // ============================================
+        // START
+        // ============================================
+        initCameras();
+    </script>
+</body>
+</html>
