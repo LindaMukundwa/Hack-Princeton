@@ -6,6 +6,7 @@ import { DRACOLoader } from './three/loaders/DRACOLoader.js';
 import { Lensflare, LensflareElement } from './three/Lensflare.js';
 import { animateFingers } from './util/fingers.js';
 import { TeacherView } from './teacherView.js';
+import { DualCameraView } from './dualCameraView.js';
 
 
 
@@ -15,6 +16,7 @@ var t1 = Date.now(), previouscurrentTime = -1, currentTime = 0, clock = new THRE
 var mixamorig, rigHelper, headTarget = 0, futurAverage, headTargetTime, headStarty, lastBoxRefresh = 0;
 var notesState = [new Array(88), new Array(88)];
 let teacherView;
+let dualCameraView;
 
 document.getElementById("body").addEventListener("drop", dropHandler);
 document.getElementById("body").addEventListener("dragover", dragOverHandler);
@@ -612,12 +614,21 @@ let createGui = function () {
         'Animate Fingers': true,
         'Show piano model': true,
         'Show sheet music': true,
-        'Enable Teacher Mode': false,
+    'Enable Teacher Mode': false,
+    'Enable Dual Cameras': true,
         'Calibrate Teacher': () => {
             if (teacherView) {
                 teacherView.calibrate();
             } else {
                 alert('Enable Teacher Mode first');
+            }
+        }
+        ,
+        'Calibrate Dual Cameras': () => {
+            if (dualCameraView) {
+                dualCameraView.calibrate();
+            } else {
+                alert('Enable Dual Cameras first');
             }
         }
     }
@@ -643,6 +654,10 @@ let createGui = function () {
     let teacherFolder = panel.addFolder('Teacher Mode');
     teacherFolder.add(settings, "Enable Teacher Mode").onChange(toggleTeacherMode);
     teacherFolder.add(settings, "Calibrate Teacher");
+
+    let dualFolder = panel.addFolder('Dual Cameras');
+    dualFolder.add(settings, "Enable Dual Cameras").onChange(toggleDualCameras);
+    dualFolder.add(settings, "Calibrate Dual Cameras");
 
     const elements = document.getElementsByClassName("closed");
     for (let el of elements) {
@@ -797,6 +812,23 @@ let toggleTeacherMode = function(enabled) {
     }
 }
 
+let toggleDualCameras = function(enabled) {
+    if (enabled && !dualCameraView) {
+        // if teacherView is active, dispose it to avoid conflicts
+        if (teacherView) {
+            teacherView.dispose();
+            teacherView = null;
+        }
+        dualCameraView = new DualCameraView({ onCalibrated: (baseline) => {
+            console.log('DualCameraView calibrated baseline:', baseline);
+        }});
+        dualCameraView.start();
+    } else if (!enabled && dualCameraView) {
+        dualCameraView.stop();
+        dualCameraView = null;
+    }
+}
+
 document.addEventListener('keydown', function (event) {
     if (event.code == "Space") {
         pausePlayStop();
@@ -839,6 +871,10 @@ eventjs.add(window, "load", function (event) {
             MIDI.setVolume(0, 20);
             // Make settings globally accessible
             window.settings = settings;
+            // Auto-start dual cameras if enabled
+            if (settings['Enable Dual Cameras']) {
+                try { toggleDualCameras(true); } catch(e) { console.warn('Failed to start DualCameraView', e); }
+            }
             player.loadFile(song[songid % song.length]);
             addTimecode();
             player.addListener(function (data) {

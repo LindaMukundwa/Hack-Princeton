@@ -297,21 +297,26 @@
             document.getElementById('status').textContent = 'Finding cameras...';
 
             try {
+                // Prefer non-FaceTime cameras, but fall back if needed
                 const devices = await navigator.mediaDevices.enumerateDevices();
-                
-                devices.forEach(device => {
-                    if (device.kind === 'videoinput' && cameraDeviceIds.length < 2) {
-                        cameraDeviceIds.push(device.deviceId);
-                        console.log(`Found camera: ${device.label}`);
-                    }
-                });
-
-                if (cameraDeviceIds.length < 2) {
-                    alert(`Only found ${cameraDeviceIds.length} camera(s). Two cameras required. Using same camera for both views.`);
-                    if (cameraDeviceIds.length === 1) {
-                        cameraDeviceIds.push(cameraDeviceIds[0]); // Use same camera twice
-                    }
+                const videoInputs = devices.filter(device => device.kind === 'videoinput');
+                // Filter out FaceTime HD Camera
+                const nonFaceTime = videoInputs.filter(device => !device.label.includes('FaceTime HD Camera'));
+                let selectedDevices = [];
+                if (nonFaceTime.length >= 2) {
+                    selectedDevices = [nonFaceTime[0].deviceId, nonFaceTime[1].deviceId];
+                } else if (nonFaceTime.length === 1 && videoInputs.length > 1) {
+                    // Use one non-FaceTime and one FaceTime
+                    const faceTime = videoInputs.find(device => device.label.includes('FaceTime HD Camera'));
+                    selectedDevices = [nonFaceTime[0].deviceId, faceTime.deviceId];
+                } else if (videoInputs.length >= 2) {
+                    // Only FaceTime cameras available
+                    selectedDevices = [videoInputs[0].deviceId, videoInputs[1].deviceId];
+                } else if (videoInputs.length === 1) {
+                    // Only one camera available, use it for both
+                    selectedDevices = [videoInputs[0].deviceId, videoInputs[0].deviceId];
                 }
+                cameraDeviceIds = selectedDevices;
 
                 // Start both cameras
                 const streamTop = await navigator.mediaDevices.getUserMedia({
