@@ -131,13 +131,48 @@ function init() {
     loader.load('./model/GrandPianoRecoloredWKM.glb', function (gltf) {
         document.getElementById("pianoLoading").innerHTML = "";
         pianoModel = gltf.scene;
-        pianoModel.position.set(1, -30.8 + pianoFloor, -53);
-        pianoModel.scale.set(42.5, 42.5, 42.5);
-        pianoModel.rotation.set(0, -1.570, 0);
+    // Hardcoded defaults (tweak via GUI below)
+    // Updated defaults per user alignment: x=-2.1, y=-11, z=-49, rotY=-1.525, scale=40
+    pianoModel.position.set(-2.1, -11, -49);
+    pianoModel.scale.set(40, 40, 40);
+    pianoModel.rotation.set(0, -1.525, 0);
         scene.add(pianoModel);
 
         let pianoFolder = panel.addFolder('Piano Model');
         pianoFolder.add(settings, 'Show piano model').onChange(showPiano);
+
+        // Expose live alignment controls to match generated keyboard (keys around z≈0)
+        // These controls do not change logic; they only let you nudge transforms at runtime.
+        try {
+            // Position
+            pianoFolder.add(pianoModel.position, 'x', -150, 150, 0.1).name('Position X');
+            pianoFolder.add(pianoModel.position, 'y', -150 + pianoFloor, 150 + pianoFloor, 0.1).name('Position Y');
+            pianoFolder.add(pianoModel.position, 'z', -150, 150, 0.1).name('Position Z');
+
+            // Rotation (Yaw)
+            pianoFolder.add(pianoModel.rotation, 'y', -Math.PI, Math.PI, 0.001).name('Rotation Y');
+
+            // Uniform scale
+            const pianoScaleProxy = { scale: pianoModel.scale.x };
+            pianoFolder.add(pianoScaleProxy, 'scale', 1, 100, 0.1).name('Uniform Scale').onChange(v => {
+                pianoModel.scale.set(v, v, v);
+            });
+
+            // Quick helper to roughly place the piano under the generated keys
+            pianoFolder.add({ alignUnderKeys: () => {
+                // Generated keys live around z≈0; start with that plane
+                pianoModel.position.z = 0; // bring under keys plane
+                // Keep current X, but you can nudge with the GUI
+                // Face keys: -90° is usually correct for many GLB pianos
+                pianoModel.rotation.y = -Math.PI / 2;
+                // Height: bring top around pianoFloor; Y may require small manual nudge
+                // This keeps existing offset but allows quick re-application
+                pianoModel.position.y = -30.8 + pianoFloor;
+            } }, 'alignUnderKeys').name('↘ Align Under Keys');
+
+            // Optional: expose for console fine-tuning
+            window.pianoModel = pianoModel;
+        } catch (e) { console.warn('Piano GUI controls unavailable:', e); }
 
         pianoModel.getObjectByName('Bench_Low001').position.y += 0.03;
         pianoModel.getObjectByName('Fallboard_Low').rotation.z = -1.7;
@@ -1428,6 +1463,54 @@ onNotePress: (midiNoteNumber, velocity) => {
         });
         
         airPianoController.start();
+
+        // After Air Piano UI is created, attach hover behavior to the Close button
+        // without changing Air Piano logic. This toggles a body class that our CSS
+        // uses to disable pointer-events on the sidebar/cameras so the GUI is usable.
+        const attachGuiHover = () => {
+            const pip = document.getElementById('airPianoPIP');
+            if (!pip) { setTimeout(attachGuiHover, 150); return; }
+            const closeBtn = pip.querySelector('div:nth-of-type(4) button:nth-child(3)');
+            if (!closeBtn) { setTimeout(attachGuiHover, 150); return; }
+
+            const panelEl = (panel && panel.domElement) ? panel.domElement : null;
+            if (panelEl) {
+                // Ensure GUI is visible and positioned sanely when shown
+                panelEl.style.zIndex = '10000';
+                if (!panelEl.style.position) panelEl.style.position = 'fixed';
+                if (!panelEl.style.top) panelEl.style.top = '10px';
+                if (!panelEl.style.right) panelEl.style.right = '10px';
+            }
+
+            const showGui = () => {
+                document.body.classList.add('gui-panel-active');
+                if (panelEl) panelEl.style.display = 'block';
+            };
+            const maybeHideGui = () => {
+                // Only hide if mouse is not over the Close button nor the panel
+                const overBtn = closeBtn.matches(':hover');
+                const overPanel = panelEl ? panelEl.matches(':hover') : false;
+                if (!overBtn && !overPanel) {
+                    document.body.classList.remove('gui-panel-active');
+                }
+            };
+
+            // Hover in/out behavior
+            closeBtn.addEventListener('mouseenter', showGui);
+            closeBtn.addEventListener('mouseleave', maybeHideGui);
+            if (panelEl) {
+                panelEl.addEventListener('mouseenter', showGui);
+                panelEl.addEventListener('mouseleave', maybeHideGui);
+            }
+
+            // Prevent the close button from stopping the Air Piano when clicked
+            closeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                showGui();
+            });
+        };
+        setTimeout(attachGuiHover, 300);
     } else if (!enabled && airPianoController) {
         airPianoController.stop();
         airPianoController = null;

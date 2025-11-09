@@ -54,7 +54,7 @@ createDOM() {
     // header
     const header = document.createElement('div');
     header.style.cssText = 'color:#60a5fa; font-weight:700; font-size:15px; margin-bottom:8px; text-align:center;';
-    header.innerHTML = '🎹 Air Piano Controller <span style="color:#94a3b8; font-size:12px; font-weight:400;">(Silent - Triggers 3D Piano)</span>';
+    header.innerHTML = '🎹 Air Piano Controller <span style="color:#94a3b8; font-size:12px; font-family: Candara, "Segoe UI", Arial, sans-serif; font-weight:400;">(Silent - Triggers 3D Piano)</span>';
     container.appendChild(header);
 
     // Octave selector
@@ -124,17 +124,17 @@ const controls = document.createElement('div');
 controls.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;';
 
 const calibrateBtn = document.createElement('button'); 
-calibrateBtn.innerText = '📏 Calibrate'; 
+calibrateBtn.innerText = 'Calibrate'; 
 calibrateBtn.style.cssText = 'padding:10px 12px; background:#059669; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none; transition:all 0.2s ease;';
 calibrateBtn.addEventListener('click', ()=> this.startCalibration());
 
 const drawBtn = document.createElement('button'); 
-drawBtn.innerText = '✏️ Draw Area'; 
+drawBtn.innerText = 'Draw Area'; 
 drawBtn.style.cssText = 'padding:10px 12px; background:#2563eb; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none; transition:all 0.2s ease;';
 drawBtn.addEventListener('click', ()=> this.openDrawModal());
 
 const stopBtn = document.createElement('button'); 
-stopBtn.innerText = '❌ Close'; 
+stopBtn.innerText = 'Close'; 
 stopBtn.style.cssText = 'grid-column:1/-1; padding:10px 12px; background:#dc2626; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none; transition:all 0.2s ease;';
 stopBtn.addEventListener('click', ()=> this.stop());
 
