@@ -2,10 +2,11 @@
 // This class uses dual cameras to detect "air piano" playing and triggers the 3D piano model
 // NO sound from the air piano itself - it acts as a silent controller for the 3D piano
 
+// At the top of AirPianoController constructor, add default configuration:
 class AirPianoController {
   constructor(options = {}) {
     this.options = options;
-    this.onNotePress = options.onNotePress || function(){}; // callback to trigger 3D piano
+    this.onNotePress = options.onNotePress || function(){}; 
     this.onNoteRelease = options.onNoteRelease || function(){};
     this.container = null;
     this.videoTop = null;
@@ -30,14 +31,51 @@ class AirPianoController {
     this.isDrawing = false;
     this.drawStart = null;
     this.keyPressAnimations = new Map();
-    this.activeNotes = new Map(); // Track which notes are currently pressed
+    this.activeNotes = new Map();
 
     // Octave selection (12 keys from C to B)
-    this.octaveStart = options.octaveStart || 48; // MIDI note number (C4 = 60, so 48 = C3)
-    this.numKeys = 12; // One octave
+    this.octaveStart = options.octaveStart || 48;
+    this.numKeys = 12;
+
+    // NEW: Default calibration values - CUSTOMIZE THESE
+    this.defaultDeskY = 0.450; // Average Y position when hands are flat on desk (0-1, where 1 is bottom)
+    this.defaultKeyboardArea = {
+      x: 200,      // X position (pixels in 1280x720 camera)
+      y: 200,      // Y position (pixels)
+      width: 800,  // Width (pixels) - covers about half the camera width
+      height: 300  // Height (pixels)
+    };
+    this.useDefaultCalibration = options.useDefaults || false; // Set to true to skip calibration
 
     // internal detector
     this.detector = new AirPianoPressDetector();
+    
+    // NEW: Apply defaults if enabled
+    if (this.useDefaultCalibration) {
+      this.applyDefaultCalibration();
+    }
+  }
+
+  // NEW: Method to apply default calibration values
+  applyDefaultCalibration() {
+    console.log('🎹 Applying default calibration values...');
+    
+    // Set desk surface Y for all potential fingers
+    for (let handIndex = 0; handIndex < 2; handIndex++) {
+      for (let fingerNum = 0; fingerNum < 5; fingerNum++) {
+        const fingerId = `hand${handIndex}_finger${fingerNum}`;
+        this.detector.setDeskSurfaceY(fingerId, this.defaultDeskY);
+      }
+    }
+    
+    this.calibrationComplete = true;
+    this.keyboardArea = { ...this.defaultKeyboardArea };
+    this.drawingComplete = true;
+    
+    console.log('✅ Default calibration applied:', {
+      deskY: this.defaultDeskY,
+      keyboardArea: this.keyboardArea
+    });
   }
 createDOM() {
     const container = document.createElement('div');
@@ -191,19 +229,46 @@ document.getElementById('octaveSelect').addEventListener('change', (e) => {
   }
 });
 }
-
-  async start() {
-    if (!this.container) this.createDOM();
-    try {
-      await this.initCameras();
-      this.initMediaPipe();
-      this.processFrames();
+// Visualize finger states for debugging
+drawFingerStates(fingerStates, width, height) {
+  const stateColors = {
+    'up': '#22c55e',      // Green - ready
+    'pressing': '#3b82f6', // Blue - pressing
+    'down': '#ef4444',     // Red - held down
+    'lifting': '#f59e0b'   // Orange - lifting
+  };
+  
+  let y = 40;
+  this.ctxSide.fillStyle = 'rgba(0,0,0,0.7)';
+  this.ctxSide.fillRect(width - 180, 30, 170, fingerStates.size * 25 + 10);
+  
+  fingerStates.forEach((state, fingerId) => {
+    const color = stateColors[state] || '#fff';
+    this.ctxSide.fillStyle = color;
+    this.ctxSide.font = 'bold 12px Arial';
+    this.ctxSide.fillText(`${fingerId}: ${state.toUpperCase()}`, width - 170, y);
+    y += 25;
+  });
+}
+async start() {
+  if (!this.container) this.createDOM();
+  try {
+    await this.initCameras();
+    this.initMediaPipe();
+    this.processFrames();
+    
+    // NEW: Update status based on calibration mode
+    if (this.useDefaultCalibration) {
+      this.statusDisplay.innerText = '✅ Using default calibration - Ready to play!';
+      console.log('🎹 Default calibration active - you can still recalibrate if needed');
+    } else {
       this.statusDisplay.innerText = '✅ Cameras active - Please calibrate desk position';
-    } catch (e) {
-      console.error('AirPianoController start error:', e);
-      this.statusDisplay.innerText = '❌ Camera error: ' + e.message;
     }
+  } catch (e) {
+    console.error('AirPianoController start error:', e);
+    this.statusDisplay.innerText = '❌ Camera error: ' + e.message;
   }
+}
 
   async stop() {
     // Release all active notes before stopping
@@ -253,6 +318,7 @@ document.getElementById('octaveSelect').addEventListener('change', (e) => {
     }
   }
 
+// In the initMediaPipe() function, improve the side camera settings:
 initMediaPipe() {
   if (typeof Hands === 'undefined') {
     console.warn('MediaPipe Hands is not loaded - AirPianoController requires it.');
@@ -262,22 +328,21 @@ initMediaPipe() {
   this.handsTop = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
   this.handsTop.setOptions({ 
     maxNumHands: 2, 
-    modelComplexity: 0,  // REDUCED from 1 (faster processing)
-    minDetectionConfidence: 0.6,  // REDUCED from 0.7
-    minTrackingConfidence: 0.6  // REDUCED from 0.7
+    modelComplexity: 0,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
   });
   this.handsTop.onResults(this.onResultsTop.bind(this));
 
   this.handsSide = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
   this.handsSide.setOptions({ 
     maxNumHands: 2, 
-    modelComplexity: 0,  // REDUCED from 1 (faster processing)
-    minDetectionConfidence: 0.6,  // REDUCED from 0.7
-    minTrackingConfidence: 0.6  // REDUCED from 0.7
+    modelComplexity: 1,  // INCREASED for better side detection
+    minDetectionConfidence: 0.5,  // LOWERED to catch more frames
+    minTrackingConfidence: 0.8  // INCREASED to reduce flickering once detected
   });
   this.handsSide.onResults(this.onResultsSide.bind(this));
 }
-
   async processFrames() {
     if (this.camerasReady) {
       try {
@@ -296,12 +361,10 @@ initMediaPipe() {
     const width = this.canvasTop.width = results.image.width;
     const height = this.canvasTop.height = results.image.height;
 
-    this.ctxTop.save();
-    this.ctxTop.clearRect(0,0,width,height);
-    this.ctxTop.scale(-1,1);
-    this.ctxTop.translate(-width,0);
-    this.ctxTop.drawImage(results.image, 0, 0, width, height);
-    this.ctxTop.restore();
+this.ctxTop.save();
+this.ctxTop.clearRect(0,0,width,height);
+this.ctxTop.drawImage(results.image, 0, 0, width, height);
+this.ctxTop.restore();
 
     if (this.drawingComplete && this.keyboardArea) {
       this.drawPianoKeys();
@@ -314,7 +377,7 @@ initMediaPipe() {
         fingerTips.forEach((tipIndex, fingerNum)=>{
           const lm = landmarks[tipIndex];
           const fingerId = `hand${handIndex}_finger${fingerNum}`;
-          this.detector.updatePosition(fingerId, 1 - lm.x, lm.y);
+         this.detector.updatePosition(fingerId, lm.x, lm.y);
         });
       });
     }
@@ -368,62 +431,80 @@ initMediaPipe() {
       this.ctxSide.fillText('DESK SURFACE', 10, Math.max(16, lineY-6));
     }
 
-    // Press detection and 3D piano triggering
-    if (results.multiHandLandmarks && this.drawingComplete && this.keyboardArea) {
-      const timestamp = performance.now();
-      const currentlyPressed = new Set();
 
-      results.multiHandLandmarks.forEach((landmarks, handIndex)=>{
-        this.drawHandLandmarks(landmarks, width, height, this.ctxSide, '#a855f7');
-        const fingerTips = [4,8,12,16,20];
-        fingerTips.forEach((tipIndex, fingerNum)=>{
-          const lm = landmarks[tipIndex];
-          const fingerId = `hand${handIndex}_finger${fingerNum}`;
-          const pressResult = this.detector.checkPress(fingerId, lm.y, timestamp);
+
+  // Press detection and 3D piano triggering
+if (results.multiHandLandmarks && this.drawingComplete && this.keyboardArea) {
+    const timestamp = performance.now();
+    
+    // NEW: Clean up fingers that haven't been seen recently
+    this.detector.cleanupStalefingers(timestamp);
+    
+    const currentlyPressed = new Set();
+    const fingerStates = new Map();
+    
+    results.multiHandLandmarks.forEach((landmarks, handIndex)=>{
+      this.drawHandLandmarks(landmarks, width, height, this.ctxSide, '#a855f7');
+      const fingerTips = [4,8,12,16,20];
+      
+      fingerTips.forEach((tipIndex, fingerNum)=>{
+        const lm = landmarks[tipIndex];
+        const fingerId = `hand${handIndex}_finger${fingerNum}`;
+        const pressResult = this.detector.checkPress(fingerId, lm.y, timestamp);
+        
+        // Store state for visualization
+        const state = this.detector.getFingerState(fingerId);
+        fingerStates.set(fingerId, state);
+        
+        if (pressResult) {
+          const normalizedX = pressResult.x;
+          const keyboardStartX = this.keyboardArea.x / this.canvasTop.width;
+          const keyboardEndX = (this.keyboardArea.x + this.keyboardArea.width) / this.canvasTop.width;
           
-          if (pressResult) {
-            const normalizedX = pressResult.x;
-            const keyboardStartX = this.keyboardArea.x / this.canvasTop.width;
-            const keyboardEndX = (this.keyboardArea.x + this.keyboardArea.width) / this.canvasTop.width;
+          if (normalizedX >= keyboardStartX && normalizedX <= keyboardEndX) {
+            const relativeX = (normalizedX - keyboardStartX) / (keyboardEndX - keyboardStartX);
+            const keyIndex = Math.floor(relativeX * this.numKeys);
             
-            if (normalizedX >= keyboardStartX && normalizedX <= keyboardEndX) {
-              const relativeX = (normalizedX - keyboardStartX) / (keyboardEndX - keyboardStartX);
-              const keyIndex = Math.floor(relativeX * this.numKeys);
-              
-              if (keyIndex >= 0 && keyIndex < this.numKeys) {
-                const midiNoteNumber = this.octaveStart + keyIndex;
-                currentlyPressed.add(midiNoteNumber);
+            if (keyIndex >= 0 && keyIndex < this.numKeys) {
+              const midiNoteNumber = this.octaveStart + keyIndex;
+              currentlyPressed.add(midiNoteNumber);
 
-                // Trigger 3D piano note ON if not already active
-                if (!this.activeNotes.has(midiNoteNumber)) {
-                  this.activeNotes.set(midiNoteNumber, fingerId);
-                  this.onNotePress(midiNoteNumber, 100); // velocity = 100
-                  this.keyPressAnimations.set(keyIndex, timestamp);
-                  console.log(`🎹 AIR PIANO: Note ${midiNoteNumber} ON`);
-                }
+              // Trigger 3D piano note ON if not already active
+              if (!this.activeNotes.has(midiNoteNumber)) {
+                this.activeNotes.set(midiNoteNumber, fingerId);
+                this.onNotePress(midiNoteNumber, 100);
+                this.keyPressAnimations.set(keyIndex, timestamp);
+                console.log(`🎹 Note ${midiNoteNumber} ON (${state})`);
               }
+            }
+          }
+        }
+        
+        // Check if finger is currently holding a note
+        this.activeNotes.forEach((holdingFingerId, noteNumber) => {
+          if (holdingFingerId === fingerId && !currentlyPressed.has(noteNumber)) {
+            // Finger lifted - release note
+            if (state === this.detector.STATES.UP || state === this.detector.STATES.LIFTING) {
+              this.onNoteRelease(noteNumber);
+              this.activeNotes.delete(noteNumber);
+              console.log(`🎹 Note ${noteNumber} OFF (finger lifted)`);
             }
           }
         });
       });
+    });
 
-      // Release notes that are no longer pressed
-      this.activeNotes.forEach((fingerId, noteNumber) => {
-        if (!currentlyPressed.has(noteNumber)) {
-          this.onNoteRelease(noteNumber);
-          this.activeNotes.delete(noteNumber);
-          console.log(`🎹 AIR PIANO: Note ${noteNumber} OFF`);
-        }
-      });
+    // Visualize finger states on canvas
+    this.drawFingerStates(fingerStates, width, height);
 
-      // Clear old animations
-      this.keyPressAnimations.forEach((time, keyIndex) => {
-        if (timestamp - time > 150) this.keyPressAnimations.delete(keyIndex);
-      });
-    }
-
-    this.ctxSide.restore();
+    // Clear old animations
+    this.keyPressAnimations.forEach((time, keyIndex) => {
+      if (timestamp - time > 150) this.keyPressAnimations.delete(keyIndex);
+    });
   }
+
+  this.ctxSide.restore();
+}
 
   // Calibration
   startCalibration() {
@@ -584,56 +665,126 @@ openDrawModal() {
 }
 
 // Press detector class
+// Add these properties to AirPianoPressDetector constructor:
 class AirPianoPressDetector {
   constructor(){ 
     this.deskSurfaceY = new Map(); 
     this.fingerPositions = new Map(); 
-    this.pressThreshold = 0.040;  // INCREASED from 0.035 (less sensitive)
-    this.cooldownTime = 100;  // REDUCED from 150ms (faster repeat)
+    this.pressThreshold = 0.040;  
+    this.liftThreshold = 0.070;
+    this.cooldownTime = 100;  
     this.lastPressTime = new Map();
-    this.isPressed = new Map();
+    this.fingerState = new Map();
+    
+    // NEW: Temporal smoothing to reduce flickering
+    this.lastSeenTime = new Map();  // Track last time finger was detected
+    this.missTimeout = 150;  // Keep state for 150ms after losing detection
+    
+    this.STATES = {
+      UP: 'up',
+      PRESSING: 'pressing',
+      DOWN: 'down',
+      LIFTING: 'lifting'
+    };
   }
-  // ... rest of the class stays the same
   
-  setDeskSurfaceY(fingerId,y){ this.deskSurfaceY.set(fingerId,y); }
+  setDeskSurfaceY(fingerId, y){ 
+    this.deskSurfaceY.set(fingerId, y); 
+    this.fingerState.set(fingerId, this.STATES.UP);
+    this.lastSeenTime.set(fingerId, performance.now());  // NEW
+  }
   
   getAverageDeskY(){ 
-    if(this.deskSurfaceY.size===0) return null; 
-    const vals=Array.from(this.deskSurfaceY.values()); 
-    return vals.reduce((a,b)=>a+b,0)/vals.length; 
+    if(this.deskSurfaceY.size === 0) return null; 
+    const vals = Array.from(this.deskSurfaceY.values()); 
+    return vals.reduce((a,b) => a+b, 0) / vals.length; 
   }
   
-  updatePosition(fingerId,x,y){ 
-    this.fingerPositions.set(fingerId,{x,y,timestamp:performance.now()}); 
+  updatePosition(fingerId, x, y){ 
+    this.fingerPositions.set(fingerId, {x, y, timestamp: performance.now()}); 
+    this.lastSeenTime.set(fingerId, performance.now());  // NEW: Update last seen
   }
   
-  checkPress(fingerId,currentY,timestamp){ 
+  checkPress(fingerId, currentY, timestamp){ 
     if(!this.deskSurfaceY.has(fingerId)) return null; 
-    const deskY=this.deskSurfaceY.get(fingerId); 
-    const distanceFromDesk = currentY - deskY; 
-    const last = this.lastPressTime.get(fingerId)||0; 
-    const timeSinceLastPress = timestamp - last;
+    
+    // NEW: Update last seen time
+    this.lastSeenTime.set(fingerId, timestamp);
+    
+    const deskY = this.deskSurfaceY.get(fingerId); 
+    const distanceFromDesk = currentY - deskY;
+    const currentState = this.fingerState.get(fingerId) || this.STATES.UP;
+    const lastPressTime = this.lastPressTime.get(fingerId) || 0; 
+    const timeSinceLastPress = timestamp - lastPressTime;
     
     const isTouchingDesk = distanceFromDesk >= -this.pressThreshold;
-    const wasPressed = this.isPressed.get(fingerId) || false;
+    const isLiftedHigh = distanceFromDesk < -(this.liftThreshold);
     
-    // Only trigger on new press (not already pressed) and cooldown passed
-    if(isTouchingDesk && !wasPressed && timeSinceLastPress > this.cooldownTime){ 
-      this.lastPressTime.set(fingerId,timestamp); 
-      this.isPressed.set(fingerId, true);
-      const pos = this.fingerPositions.get(fingerId); 
-      if(pos && (timestamp - pos.timestamp) < 150){ 
-        return {pressed:true, x:pos.x, y:pos.y, fingerId, sideY:currentY, deskY}; 
-      } 
-      return null; 
+    let newState = currentState;
+    let shouldTrigger = false;
+    
+    if (currentState === this.STATES.UP) {
+      if (isTouchingDesk && timeSinceLastPress > this.cooldownTime) {
+        newState = this.STATES.DOWN;
+        shouldTrigger = true;
+        this.lastPressTime.set(fingerId, timestamp);
+      }
+    } 
+    else if (currentState === this.STATES.DOWN) {
+      if (isLiftedHigh) {
+        newState = this.STATES.UP;
+      } else if (!isTouchingDesk) {
+        newState = this.STATES.LIFTING;
+      }
+    }
+    else if (currentState === this.STATES.LIFTING) {
+      if (isLiftedHigh) {
+        newState = this.STATES.UP;
+      } else if (isTouchingDesk) {
+        newState = this.STATES.DOWN;
+      }
     }
     
-    // Update press state
-    if (!isTouchingDesk) {
-      this.isPressed.set(fingerId, false);
+    this.fingerState.set(fingerId, newState);
+    
+    if (shouldTrigger) {
+      const pos = this.fingerPositions.get(fingerId); 
+      if(pos && (timestamp - pos.timestamp) < 150){ 
+        return {
+          pressed: true, 
+          x: pos.x, 
+          y: pos.y, 
+          fingerId, 
+          sideY: currentY, 
+          deskY,
+          state: newState
+        }; 
+      }
     }
     
     return null; 
+  }
+  
+  // NEW: Clean up stale fingers that haven't been seen recently
+  cleanupStalefingers(currentTimestamp) {
+    this.lastSeenTime.forEach((lastSeen, fingerId) => {
+      if (currentTimestamp - lastSeen > this.missTimeout) {
+        // Finger hasn't been detected in a while - reset to UP
+        const currentState = this.fingerState.get(fingerId);
+        if (currentState === this.STATES.DOWN || currentState === this.STATES.LIFTING) {
+          console.log(`⚠️ Lost tracking for ${fingerId}, resetting to UP`);
+          this.fingerState.set(fingerId, this.STATES.UP);
+        }
+      }
+    });
+  }
+  
+  getFingerState(fingerId) {
+    return this.fingerState.get(fingerId) || this.STATES.UP;
+  }
+  
+  resetFinger(fingerId) {
+    this.fingerState.set(fingerId, this.STATES.UP);
   }
 }
 
