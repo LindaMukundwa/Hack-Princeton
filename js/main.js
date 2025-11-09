@@ -313,6 +313,7 @@ function logNoteToHistory(midiNoteNumber, velocity) {
     updateNoteHistoryDOM();
 }
 
+// In main.js - Update the updateNoteHistoryDOM function around line 316:
 function updateNoteHistoryDOM() {
     const listEl = document.getElementById('note-history-list');
     if (!listEl) return;
@@ -335,6 +336,11 @@ function updateNoteHistoryDOM() {
     // Remove excess notes from bottom
     while (listEl.children.length > MAX_HISTORY) {
         listEl.removeChild(listEl.lastChild);
+    }
+    
+    // NEW: Auto-scroll to show the newest note at the top
+    if (newNotes.length > 0) {
+        listEl.scrollTop = 0;
     }
 }
 // Recording & Playback System
@@ -815,6 +821,9 @@ let createGui = function () {
         'Enable Teacher Mode': false,
         'Enable Dual Cameras': true,
         'Enable Air Piano': false,
+          'Press Sensitivity': 40,  // pressThreshold in mm
+  'Lift Height': 70,         // liftThreshold in mm
+  'Note Cooldown (ms)': 100, // cooldownTime
         // Recording controls
         '🔴 Start Recording': startRecording,
         '⏹️ Stop Recording': stopRecording,
@@ -894,7 +903,23 @@ let createGui = function () {
             let initialY;
             let xOffset = 0;
             let yOffset = 0;
-
+// Add to GUI
+let airPianoTuning = panel.addFolder('🎛️ Air Piano Tuning');
+airPianoTuning.add(settings, 'Press Sensitivity', 20, 80, 1).onChange((val) => {
+  if (dualCameraView && dualCameraView.airPiano) {
+    dualCameraView.airPiano.detector.pressThreshold = val / 1000;
+  }
+});
+airPianoTuning.add(settings, 'Lift Height', 40, 120, 1).onChange((val) => {
+  if (dualCameraView && dualCameraView.airPiano) {
+    dualCameraView.airPiano.detector.liftThreshold = val / 1000;
+  }
+});
+airPianoTuning.add(settings, 'Note Cooldown (ms)', 50, 300, 10).onChange((val) => {
+  if (dualCameraView && dualCameraView.airPiano) {
+    dualCameraView.airPiano.detector.cooldownTime = val;
+  }
+});
             // Get the title bar (first child is usually the close button container)
             const dragHandle = guiContainer.querySelector('.dg');
             
@@ -1089,6 +1114,7 @@ let toggleTeacherMode = function(enabled) {
     }
 }
 
+// In main.js, around line 1118 in toggleDualCameras function:
 let toggleDualCameras = function(enabled) {
     if (enabled && !dualCameraView) {
         if (teacherView) {
@@ -1107,11 +1133,15 @@ let toggleDualCameras = function(enabled) {
         
         dualCameraView = new DualCameraView({ 
             octaveStart: 60,
+            useDefaults: true,  // 🔥 SET THIS TO TRUE TO USE DEFAULTS!
             onCalibrated: (baseline) => {
                 console.log('✅ DualCameraView calibrated baseline:', baseline);
             }
         });
         dualCameraView.start();
+        
+        // ... rest of your code
+
         
         // AUTO-POSITION CAMERA TO TOP-DOWN VIEW OF PLAYING AREA
         setTimeout(() => {
