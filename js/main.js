@@ -328,25 +328,100 @@ function openPiano(init = false) {
 }
 
 // Note History Functions
+// ============================================
+// VEXFLOW SHEET MUSIC INTEGRATION
+// ============================================
+class SheetMusicRenderer {
+    constructor() {
+        this.notes = [];
+        this.maxNotes = 10;
+        this.container = null;
+        this.canvas = null;
+        this.renderer = null;
+        this.context = null;
+        this.currentClef = 'treble';
+        this.initialized = false;
+        this.init();
+    }
+    init() {
+        const overlay = document.getElementById('note-history-overlay');
+        if (!overlay) { console.error('SheetMusicRenderer: overlay not found'); return; }
+        this.container = document.createElement('div');
+        this.container.id = 'sheet-music-canvas-container';
+        this.container.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:200px;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);border-bottom:2px solid rgba(34,197,94,0.6);z-index:10;overflow:hidden;';
+        this.canvas = document.createElement('canvas');
+        this.canvas.width = 280; this.canvas.height = 200; this.canvas.style.cssText = 'width:100%;height:100%;';
+        this.container.appendChild(this.canvas);
+        overlay.insertBefore(this.container, overlay.firstChild);
+        const noteList = document.getElementById('note-history-list');
+        if (noteList) noteList.style.paddingTop = '220px';
+        if (typeof Vex === 'undefined') { console.error('VexFlow not loaded'); return; }
+        this.renderer = new Vex.Flow.Renderer(this.canvas, Vex.Flow.Renderer.Backends.CANVAS);
+        this.context = this.renderer.getContext();
+        this.initialized = true;
+        this.render();
+    }
+    midiToVexNote(midi) {
+        const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+        const octave = Math.floor((midi - 12) / 12); const name = names[midi % 12];
+        return { note: name, octave, vex: `${name}/${octave}` };
+    }
+    determineClef(midi) { return midi >= 60 ? 'treble' : 'bass'; }
+    addNote(midi, velocity=100) {
+        if (!this.initialized) return;
+        const info = this.midiToVexNote(midi); const clef = this.determineClef(midi);
+        this.notes.push({ midi, info, clef, velocity, recent: true });
+        for (let i=0;i<this.notes.length-1;i++) this.notes[i].recent=false;
+        if (this.notes.length > this.maxNotes) this.notes.shift();
+        this.currentClef = clef; this.render();
+    }
+    render() {
+        if (!this.context) return; this.context.clearRect(0,0,this.canvas.width,this.canvas.height);
+        const VF = Vex.Flow; const stave = new VF.Stave(10,40,260); stave.addClef(this.currentClef); stave.setContext(this.context).draw();
+        if (this.notes.length === 0) { this.renderEmpty(); return; }
+        try {
+            const vexNotes=[]; for (const n of this.notes){
+                let keys=[n.info.vex]; let acc=null; if(n.info.note.includes('#')){ keys=[n.info.note.replace('#','')+'/'+n.info.octave]; acc='#'; }
+                const sn=new VF.StaveNote({ clef:this.currentClef, keys, duration:'q' }); if(acc) sn.addModifier(new VF.Accidental(acc),0);
+                if(n.recent) sn.setStyle({ fillStyle:'#22c55e', strokeStyle:'#22c55e'}); vexNotes.push(sn);
+            }
+            const voice=new VF.Voice({ num_beats: this.notes.length, beat_value:4 }); voice.addTickables(vexNotes);
+            new VF.Formatter().joinVoices([voice]).format([voice],220); voice.draw(this.context,stave);
+        } catch(e){ console.error('VexFlow render error',e); this.context.fillStyle='#ef4444'; this.context.font='12px Candara'; this.context.fillText('Sheet music error',20,100); }
+    }
+    renderEmpty(){ const VF=Vex.Flow; const s=new VF.Stave(10,40,260); s.addClef('treble'); s.setContext(this.context).draw(); this.context.fillStyle='#94a3b8'; this.context.font='12px Candara'; this.context.fillText('Play notes to see sheet music...',20,160); }
+    clear(){ this.notes=[]; this.render(); }
+}
+let sheetMusicRenderer = null;
+function initSheetMusic(){
+    const start = Date.now();
+    const tryInit = () => {
+        if (typeof Vex !== 'undefined' && Vex.Flow) {
+            sheetMusicRenderer = new SheetMusicRenderer();
+            window.sheetMusicRenderer = sheetMusicRenderer;
+            console.log('✅ Sheet music renderer initialized');
+            return;
+        }
+        if (Date.now() - start < 5000) {
+            setTimeout(tryInit, 100);
+        } else {
+            console.warn('⚠️ VexFlow not available after 5s timeout');
+        }
+    };
+    tryInit();
+}
+
 function logNoteToHistory(midiNoteNumber, velocity) {
     const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const octave = Math.floor((midiNoteNumber - 12) / 12);
     const noteName = noteNames[midiNoteNumber % 12] + octave;
-    
     const timestamp = new Date().toLocaleTimeString();
-    
-    const noteItem = {
-        name: noteName,
-        midi: midiNoteNumber,
-        velocity: velocity,
-        time: timestamp
-    };
-    
-    noteHistory.unshift(noteItem);
-    if (noteHistory.length > MAX_HISTORY) noteHistory.pop();
-    
+    const noteItem = { name: noteName, midi: midiNoteNumber, velocity, time: timestamp };
+    noteHistory.unshift(noteItem); if (noteHistory.length > MAX_HISTORY) noteHistory.pop();
     updateNoteHistoryDOM();
+    if (sheetMusicRenderer) sheetMusicRenderer.addNote(midiNoteNumber, velocity);
 }
+window.initSheetMusic = initSheetMusic;
 
 function updateNoteHistoryDOM() {
     const listEl = document.getElementById('note-history-list');
@@ -1271,6 +1346,8 @@ eventjs.add(window, "load", function (event) {
             MIDI.setVolume(0, 20);
             // Make settings globally accessible
             window.settings = settings;
+            // Initialize VexFlow sheet music renderer
+            try { initSheetMusic(); } catch(e) { console.warn('Sheet music init failed:', e); }
             // Auto-start dual cameras if enabled
             if (settings['Enable Dual Cameras']) {
                 try { toggleDualCameras(true); } catch(e) { console.warn('Failed to start DualCameraView', e); }
