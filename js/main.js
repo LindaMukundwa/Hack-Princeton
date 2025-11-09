@@ -317,13 +317,174 @@ function updateNoteHistoryDOM() {
     const listEl = document.getElementById('note-history-list');
     if (!listEl) return;
     
-    listEl.innerHTML = noteHistory.map(note => `
-        <div class="note-item">
+    // Only add new notes instead of rebuilding entire list
+    const currentCount = listEl.children.length;
+    const newNotes = noteHistory.slice(0, noteHistory.length - currentCount);
+    
+    // Insert new notes at the top
+    newNotes.reverse().forEach(note => {
+        const noteDiv = document.createElement('div');
+        noteDiv.className = 'note-item';
+        noteDiv.innerHTML = `
             <span class="note-name">${note.name}</span>
             <span class="note-meta">MIDI ${note.midi} • ${note.time}</span>
-        </div>
-    `).join('');
+        `;
+        listEl.insertBefore(noteDiv, listEl.firstChild);
+    });
+    
+    // Remove excess notes from bottom
+    while (listEl.children.length > MAX_HISTORY) {
+        listEl.removeChild(listEl.lastChild);
+    }
 }
+// Recording & Playback System
+let recordedNotes = [];
+let isRecording = false;
+let recordingStartTime = 0;
+let isPlayingRecording = false;
+let playbackTimeouts = [];
+
+function startRecording() {
+    recordedNotes = [];
+    isRecording = true;
+    recordingStartTime = performance.now();
+    console.log('🔴 Recording started...');
+    updateRecordingStatus('🔴 Recording...');
+}
+
+function stopRecording() {
+    isRecording = false;
+    console.log('⏹️ Recording stopped. Captured', recordedNotes.length, 'notes');
+    updateRecordingStatus(`✅ Recorded ${recordedNotes.length} notes`);
+    return recordedNotes;
+}
+
+function playRecording() {
+    if (recordedNotes.length === 0) {
+        alert('No recording to play! Record something first.');
+        return;
+    }
+    
+    if (isPlayingRecording) {
+        stopPlayback();
+        return;
+    }
+    
+    isPlayingRecording = true;
+    updateRecordingStatus('▶️ Playing recording...');
+    console.log('▶️ Playing recording...');
+    
+    // Clear any existing timeouts
+    playbackTimeouts.forEach(t => clearTimeout(t));
+    playbackTimeouts = [];
+    
+    const startTime = performance.now();
+    
+    recordedNotes.forEach(note => {
+        const noteOnTimeout = setTimeout(() => {
+            const pianoKey = note.midiNote - 21;
+            if (pianoKey >= 0 && pianoKey < 88) {
+                // Trigger the 3D piano
+                MIDI.noteOn(0, note.midiNote, note.velocity, 0);
+                setKey(pianoKey, true, 0);
+                
+                // Animate the pianist
+                if (rigHelper) {
+                    rigHelper.right.average = pianoKey;
+                }
+                if (settings["Animate Fingers"] && notesState && mixamorig) {
+                    notesState[0][pianoKey] = true;
+                    animateFingers(notesState, rigHelper, mixamorig, 0, true);
+                }
+            }
+        }, note.timestamp);
+        
+        const noteOffTimeout = setTimeout(() => {
+            const pianoKey = note.midiNote - 21;
+            if (pianoKey >= 0 && pianoKey < 88) {
+                MIDI.noteOff(0, note.midiNote, 0);
+                setKey(pianoKey, false, 0);
+                
+                if (settings["Animate Fingers"] && notesState && mixamorig) {
+                    notesState[0][pianoKey] = false;
+                    animateFingers(notesState, rigHelper, mixamorig, 0, true);
+                }
+            }
+        }, note.timestamp + note.duration);
+        
+        playbackTimeouts.push(noteOnTimeout, noteOffTimeout);
+    });
+    
+    // Mark playback as complete
+    const totalDuration = recordedNotes[recordedNotes.length - 1].timestamp + 
+                         recordedNotes[recordedNotes.length - 1].duration + 500;
+    const endTimeout = setTimeout(() => {
+        isPlayingRecording = false;
+        updateRecordingStatus(`✅ Recorded ${recordedNotes.length} notes`);
+        console.log('✅ Playback complete');
+    }, totalDuration);
+    
+    playbackTimeouts.push(endTimeout);
+}
+
+function stopPlayback() {
+    playbackTimeouts.forEach(t => clearTimeout(t));
+    playbackTimeouts = [];
+    isPlayingRecording = false;
+    updateRecordingStatus(`✅ Recorded ${recordedNotes.length} notes`);
+    console.log('⏹️ Playback stopped');
+}
+
+function clearRecording() {
+    recordedNotes = [];
+    isRecording = false;
+    isPlayingRecording = false;
+    playbackTimeouts.forEach(t => clearTimeout(t));
+    playbackTimeouts = [];
+    updateRecordingStatus('Ready to record');
+    console.log('🗑️ Recording cleared');
+}
+
+function updateRecordingStatus(message) {
+    const statusEl = document.getElementById('recording-status');
+    if (statusEl) {
+        statusEl.textContent = message;
+    }
+}
+
+// Hook into DualCameraView to record notes
+let lastNoteOnTime = new Map(); // Track when notes started
+
+function recordNote(midiNote, velocity, isNoteOn) {
+    if (!isRecording) return;
+    
+    const currentTime = performance.now() - recordingStartTime;
+    
+    if (isNoteOn) {
+        // Record note start time
+        lastNoteOnTime.set(midiNote, currentTime);
+    } else {
+        // Calculate duration and save the note
+        const startTime = lastNoteOnTime.get(midiNote);
+        if (startTime !== undefined) {
+            const duration = currentTime - startTime;
+            recordedNotes.push({
+                midiNote: midiNote,
+                velocity: velocity,
+                timestamp: startTime,
+                duration: duration
+            });
+            lastNoteOnTime.delete(midiNote);
+        }
+    }
+}
+
+// Expose globally
+window.startRecording = startRecording;
+window.stopRecording = stopRecording;
+window.playRecording = playRecording;
+window.clearRecording = clearRecording;
+window.recordNote = recordNote;
 function rigInit() {
     pianistModel.getObjectByName('mixamorigLeftUpLeg').rotation.x = -1.1;
     pianistModel.getObjectByName('mixamorigRightUpLeg').rotation.x = -1.1;
@@ -633,8 +794,8 @@ let createFuturBox = function (clearBox = true) {
         }
     }
 };
-let createGui = function () {
 
+let createGui = function () {
     panel = new GUI({ width: 310 });
     let playerFolder = panel.addFolder('Player');
 
@@ -653,7 +814,12 @@ let createGui = function () {
         'Show sheet music': true,
         'Enable Teacher Mode': false,
         'Enable Dual Cameras': true,
-        'Enable Air Piano': false,  // ADD THIS LINE
+        'Enable Air Piano': false,
+        // Recording controls
+        '🔴 Start Recording': startRecording,
+        '⏹️ Stop Recording': stopRecording,
+        '▶️ Play Recording': playRecording,
+        '🗑️ Clear Recording': clearRecording,
         'Calibrate Teacher': () => {
             if (teacherView) {
                 teacherView.calibrate();
@@ -669,6 +835,7 @@ let createGui = function () {
             }
         }
     }
+    
     playerFolder.add(settings, "Volume", 0, 100, 1).onChange(SetVolume);
     playerFolder.add(settings, "Pause/Play");
     playerFolder.add(settings, "Next Song");
@@ -688,6 +855,13 @@ let createGui = function () {
     });
     playerFolder.add(settings, "Open Midi File");
     
+    // ADD RECORDING FOLDER HERE
+    let recordingFolder = panel.addFolder('🎙️ Recording');
+    recordingFolder.add(settings, '🔴 Start Recording');
+    recordingFolder.add(settings, '⏹️ Stop Recording');
+    recordingFolder.add(settings, '▶️ Play Recording');
+    recordingFolder.add(settings, '🗑️ Clear Recording');
+    
     let teacherFolder = panel.addFolder('Teacher Mode');
     teacherFolder.add(settings, "Enable Teacher Mode").onChange(toggleTeacherMode);
     teacherFolder.add(settings, "Calibrate Teacher");
@@ -696,14 +870,76 @@ let createGui = function () {
     dualFolder.add(settings, "Enable Dual Cameras").onChange(toggleDualCameras);
     dualFolder.add(settings, "Calibrate Dual Cameras");
 
-    // ADD THIS NEW AIR PIANO FOLDER HERE:
-    let airPianoFolder = panel.addFolder('Air Piano (Experimental)');
-    airPianoFolder.add(settings, "Enable Air Piano").onChange(toggleAirPiano);
-
     const elements = document.getElementsByClassName("closed");
     for (let el of elements) {
         el.className = "open";
     }
+    
+    // MAKE GUI DRAGGABLE
+    setTimeout(() => {
+        const guiContainer = panel.domElement.parentElement;
+        if (guiContainer) {
+            guiContainer.style.position = 'fixed';
+            guiContainer.style.top = '10px';
+            guiContainer.style.right = '10px';
+            guiContainer.style.zIndex = '9999';
+            guiContainer.style.display = 'block';
+            guiContainer.style.cursor = 'move';
+            
+            // Make it draggable
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+            let xOffset = 0;
+            let yOffset = 0;
+
+            // Get the title bar (first child is usually the close button container)
+            const dragHandle = guiContainer.querySelector('.dg');
+            
+            if (dragHandle) {
+                dragHandle.addEventListener('mousedown', dragStart);
+                document.addEventListener('mousemove', drag);
+                document.addEventListener('mouseup', dragEnd);
+            }
+
+            function dragStart(e) {
+                // Only drag from the title area, not from controls
+                if (e.target.classList.contains('title') || 
+                    e.target.parentElement.classList.contains('dg') ||
+                    e.target.classList.contains('dg')) {
+                    initialX = e.clientX - xOffset;
+                    initialY = e.clientY - yOffset;
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+                    xOffset = currentX;
+                    yOffset = currentY;
+                    
+                    setTranslate(currentX, currentY, guiContainer);
+                }
+            }
+
+            function dragEnd(e) {
+                initialX = currentX;
+                initialY = currentY;
+                isDragging = false;
+            }
+
+            function setTranslate(xPos, yPos, el) {
+                el.style.transform = `translate(${xPos}px, ${yPos}px)`;
+            }
+            
+            console.log('✅ GUI panel positioned, visible, and draggable');
+        }
+    }, 100);
 }
 
 let openMidiFile = function() {
@@ -855,13 +1091,11 @@ let toggleTeacherMode = function(enabled) {
 
 let toggleDualCameras = function(enabled) {
     if (enabled && !dualCameraView) {
-        // if teacherView is active, dispose it to avoid conflicts
         if (teacherView) {
             teacherView.dispose();
             teacherView = null;
         }
         
-        // IMPORTANT: Expose necessary functions and state globally for DualCameraView
         window.notesState = notesState;
         window.rigHelper = rigHelper;
         window.mixamorig = mixamorig;
@@ -870,17 +1104,28 @@ let toggleDualCameras = function(enabled) {
         window.settings = settings;
         
         console.log('🎹 Initializing DualCameraView with 3D piano integration...');
-        console.log('MIDI available:', typeof MIDI !== 'undefined');
-        console.log('setKey available:', typeof setKey === 'function');
-        console.log('animateFingers available:', typeof animateFingers === 'function');
         
         dualCameraView = new DualCameraView({ 
-            octaveStart: 60, // Middle C octave
+            octaveStart: 60,
             onCalibrated: (baseline) => {
                 console.log('✅ DualCameraView calibrated baseline:', baseline);
             }
         });
         dualCameraView.start();
+        
+        // AUTO-POSITION CAMERA TO TOP-DOWN VIEW OF PLAYING AREA
+        setTimeout(() => {
+          const octaveStart = 60; // Middle C octave
+          const centerKey = octaveStart + 6 - 21; // Center of octave in piano key coordinates
+          
+          camera.position.set(centerKey - 25, 85, 15); // Above and slightly in front
+          camera.lookAt(centerKey - 25, pianoFloor, 0);
+          controls.target.set(centerKey - 25, pianoFloor, 0);
+          controls.update();
+          
+          console.log('📸 Camera auto-positioned above playing area');
+        }, 500); // Small delay to let everything initialize
+        
     } else if (!enabled && dualCameraView) {
         dualCameraView.stop();
         dualCameraView = null;
@@ -895,13 +1140,18 @@ document.addEventListener('keydown', function (event) {
 
 // set keyOn of keyOff 
 let setKey = function (pianoKey, keyOn, track) {
-    // ADD THIS LINE:
+    // Add note to history
     if (keyOn) logNoteToHistory(pianoKey + 21, 100);
+    
     if (track != undefined)
         notesState[track % 2][pianoKey] = keyOn
+    
     if ((keyOn && pianoKeys[pianoKey].isOn) || (!keyOn && !pianoKeys[pianoKey].isOn))
         return
+    
     let modifier = keyOn ? 1 : -1;
+    
+    // ANIMATION: Move the key
     if (pianoKeys[pianoKey].isWhite) {
         pianoKeys[pianoKey].box.rotation.x += 0.1 * modifier
         pianoKeys[pianoKey].line.rotation.x += 0.1 * modifier
@@ -914,9 +1164,64 @@ let setKey = function (pianoKey, keyOn, track) {
         pianoKeys[pianoKey].box.position.y -= 0.15 * modifier
         pianoKeys[pianoKey].line.position.y -= 0.15 * modifier
     }
+    
+    // COLOR CHANGE: Make pressed key flash bright color
+    if (keyOn) {
+        // Store original color
+        if (!pianoKeys[pianoKey].originalColor) {
+            pianoKeys[pianoKey].originalColor = pianoKeys[pianoKey].box.material.color.getHex();
+        }
+        
+        // Flash bright cyan/yellow when pressed
+        const flashColor = pianoKeys[pianoKey].isWhite ? 0x00ffff : 0xffff00;
+        pianoKeys[pianoKey].box.material.color.setHex(flashColor);
+        pianoKeys[pianoKey].box.material.emissive = new THREE.Color(flashColor);
+        pianoKeys[pianoKey].box.material.emissiveIntensity = 0.5;
+        
+        // Fade back to original color after 200ms
+        setTimeout(() => {
+            if (pianoKeys[pianoKey].originalColor) {
+                pianoKeys[pianoKey].box.material.color.setHex(pianoKeys[pianoKey].originalColor);
+                pianoKeys[pianoKey].box.material.emissive = new THREE.Color(0x000000);
+                pianoKeys[pianoKey].box.material.emissiveIntensity = 0;
+            }
+        }, 200);
+    }
+    
     pianoKeys[pianoKey].isOn = keyOn;
 }
+// Highlight the octave range being played
+let highlightOctaveRange = function(startKey, numKeys = 12) {
+    // Reset all keys to default color first
+    for (let i = 0; i < 88; i++) {
+        if (pianoKeys[i].box.material.color.getHex() === 0xff69b4 || 
+            pianoKeys[i].box.material.color.getHex() === 0xff1493) {
+            // Reset highlighted keys back to white/black
+            const defaultColor = pianoKeys[i].isWhite ? 0xffffff : 0x000000;
+            pianoKeys[i].box.material.color.setHex(defaultColor);
+            pianoKeys[i].box.material.emissive = new THREE.Color(0x000000);
+            pianoKeys[i].box.material.emissiveIntensity = 0;
+        }
+    }
+    
+    // Highlight the active octave range
+    for (let i = 0; i < numKeys; i++) {
+        const keyIndex = startKey + i;
+        if (keyIndex >= 0 && keyIndex < 88) {
+            // Pink highlight for active octave
+            const highlightColor = pianoKeys[keyIndex].isWhite ? 0xff69b4 : 0xff1493;
+            pianoKeys[keyIndex].box.material.color.setHex(highlightColor);
+            pianoKeys[keyIndex].box.material.emissive = new THREE.Color(highlightColor);
+            pianoKeys[keyIndex].box.material.emissiveIntensity = 0.3;
+            
+            // Store original color for flash-back
+            pianoKeys[keyIndex].originalColor = highlightColor;
+        }
+    }
+}
 
+// Expose globally
+window.highlightOctaveRange = highlightOctaveRange;
 eventjs.add(window, "load", function (event) {
     MIDI.loader = new sketch.ui.Timer;
     MIDI.loadPlugin({
@@ -1049,24 +1354,61 @@ function toggleAirPiano(enabled) {
         // Create air piano controller with callbacks to 3D piano
         airPianoController = new AirPianoController({
             octaveStart: 60, // C4 (middle C)
-            onNotePress: (midiNoteNumber, velocity) => {
-                // Trigger the 3D piano key press
-                const pianoKey = midiNoteNumber - 21; // Piano keys are 0-87 (A0-C8)
-                if (pianoKey >= 0 && pianoKey < 88) {
-                    // Play the note through MIDI
-                    MIDI.noteOn(0, midiNoteNumber, velocity, 0);
-                    
-                    // Animate the 3D piano key
-                    setKey(pianoKey, true, 0);
-                    
-                    // Visual feedback for fingers
-                    if (settings["Animate Fingers"]) {
-                        notesState[0][pianoKey] = true;
-                        animateFingers(notesState, rigHelper, mixamorig, 0, true);
-                    }
-                }
-            },
+onNotePress: (midiNoteNumber, velocity) => {
+  console.log('🎹 DualCameraView: Note ON', midiNoteNumber, velocity);
+    // RECORD THE NOTE
+  if (typeof window.recordNote === 'function') {
+    window.recordNote(midiNoteNumber, velocity, true);
+  }
+  try {
+    const pianoKey = midiNoteNumber - 21;
+    
+    if (pianoKey >= 0 && pianoKey < 88) {
+      // Highlight the current octave being played
+      if (typeof window.highlightOctaveRange === 'function' && this.airPiano) {
+        const octaveStart = this.airPiano.octaveStart - 21; // Convert MIDI to piano key
+        window.highlightOctaveRange(octaveStart, 12);
+      }
+      
+      // Play the note through MIDI
+      if (typeof MIDI !== 'undefined' && MIDI.noteOn) {
+        MIDI.noteOn(0, midiNoteNumber, velocity, 0);
+      }
+      
+      // Animate the 3D piano key
+      if (typeof window.setKey === 'function') {
+        window.setKey(pianoKey, true, 0);
+      }
+      
+      // UPDATE rigHelper.right.average to current playing position
+      if (window.rigHelper) {
+        window.rigHelper.right.average = pianoKey;
+      }
+      
+      // Update notesState and animate fingers
+      if (window.notesState) {
+        window.notesState[0][pianoKey] = true;
+        
+        if (typeof window.animateFingers === 'function' && window.rigHelper && window.mixamorig) {
+          window.animateFingers(window.notesState, window.rigHelper, window.mixamorig, 0, true);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('❌ onNotePress error:', e);
+  }
+  
+  if (options.onNotePress) {
+    options.onNotePress(midiNoteNumber, velocity);
+  }
+},
             onNoteRelease: (midiNoteNumber) => {
+    console.log('🎹 DualCameraView: Note OFF', midiNoteNumber);
+
+      // RECORD THE NOTE RELEASE
+  if (typeof window.recordNote === 'function') {
+    window.recordNote(midiNoteNumber, 100, false);
+  }
                 // Release the 3D piano key
                 const pianoKey = midiNoteNumber - 21;
                 if (pianoKey >= 0 && pianoKey < 88) {
@@ -1094,3 +1436,4 @@ function toggleAirPiano(enabled) {
 
 // Expose globally for GUI access
 window.toggleAirPiano = toggleAirPiano;
+window.setHandById = setHandById;

@@ -151,10 +151,11 @@ container.appendChild(controls);
     container.appendChild(status);
 
     // hidden draw canvas overlay
-    const drawCanvas = document.createElement('canvas'); 
-    drawCanvas.id = 'airPianoDrawCanvas'; 
-    drawCanvas.style.cssText = 'position:absolute; left:12px; top:80px; width:calc(100% - 24px); height:200px; display:none; z-index:4000; cursor:crosshair; border:2px solid #3b82f6; border-radius:6px;';
-    container.appendChild(drawCanvas);
+  // hidden draw canvas overlay - now appends to body for proper positioning
+const drawCanvas = document.createElement('canvas'); 
+drawCanvas.id = 'airPianoDrawCanvas'; 
+drawCanvas.style.cssText = 'position:fixed; display:none; z-index:5000; cursor:crosshair; border:3px solid #3b82f6; box-shadow:0 0 20px rgba(59,130,246,0.5); border-radius:6px;';
+document.body.appendChild(drawCanvas); // Append to body instead of container
 
     // Append to camera-stack instead of body
     const cameraStack = document.getElementById('camera-stack');
@@ -178,10 +179,17 @@ container.appendChild(controls);
     this.statusDisplay = status;
 
     // Octave change handler
-    document.getElementById('octaveSelect').addEventListener('change', (e) => {
-      this.octaveStart = parseInt(e.target.value);
-      console.log('Air Piano octave changed to:', this.octaveStart);
-    });
+// Octave change handler
+document.getElementById('octaveSelect').addEventListener('change', (e) => {
+  this.octaveStart = parseInt(e.target.value);
+  console.log('Air Piano octave changed to:', this.octaveStart);
+  
+  // Highlight the new octave on the 3D piano
+  if (typeof window.highlightOctaveRange === 'function') {
+    const octaveStartKey = this.octaveStart - 21; // Convert MIDI to piano key index
+    window.highlightOctaveRange(octaveStartKey, 12);
+  }
+});
 }
 
   async start() {
@@ -443,16 +451,25 @@ initMediaPipe() {
   calibrate() { this.startCalibration(); }
 
   // Draw keyboard area
-  openDrawModal() {
+openDrawModal() {
     if (!this.calibrationComplete) {
       alert('Please calibrate desk position first!');
       return;
     }
     
     this.statusDisplay.innerText = '✏️ Draw your keyboard area on the TOP camera...';
+    
+    // Get the actual position and size of the top camera canvas
+    const topCanvasRect = this.canvasTop.getBoundingClientRect();
+    
+    // Position draw canvas exactly over the top camera canvas
     this.drawCanvas.style.display = 'block';
-    const rect = this.canvasTop.getBoundingClientRect();
-    this.drawCanvas.width = this.canvasTop.width; 
+    this.drawCanvas.style.position = 'absolute';
+    this.drawCanvas.style.left = topCanvasRect.left + 'px';
+    this.drawCanvas.style.top = topCanvasRect.top + 'px';
+    this.drawCanvas.style.width = topCanvasRect.width + 'px';
+    this.drawCanvas.style.height = topCanvasRect.height + 'px';
+    this.drawCanvas.width = this.canvasTop.width;
     this.drawCanvas.height = this.canvasTop.height;
 
     const onMouseDown = (e) => {
@@ -498,7 +515,7 @@ initMediaPipe() {
     this.drawCanvas.addEventListener('mousedown', onMouseDown);
     this.drawCanvas.addEventListener('mousemove', onMouseMove);
     this.drawCanvas.addEventListener('mouseup', onMouseUp);
-  }
+}
 
   // Draw piano key overlay
   drawPianoKeys() {
@@ -642,63 +659,80 @@ class DualCameraView {
     // Transform old DualCameraView into new AirPianoController with 3D piano integration
     this.airPiano = new AirPianoController({
       ...options,
-      onNotePress: (midiNoteNumber, velocity) => {
-        console.log('🎹 DualCameraView: Note ON', midiNoteNumber, velocity);
-        
+     onNotePress: (midiNoteNumber, velocity) => {
+  console.log('🎹 DualCameraView: Note ON', midiNoteNumber, velocity);
+  
+  try {
+        if (typeof window.recordNote === 'function') {
+      window.recordNote(midiNoteNumber, velocity, true);
+    }
+    const pianoKey = midiNoteNumber - 21;
+    
+    if (pianoKey >= 0 && pianoKey < 88) {
+      // Play the note through MIDI
+      if (typeof MIDI !== 'undefined' && MIDI.noteOn) {
         try {
-          const pianoKey = midiNoteNumber - 21;
-          
-          if (pianoKey >= 0 && pianoKey < 88) {
-            // Play the note through MIDI (with error handling)
-            if (typeof MIDI !== 'undefined' && MIDI.noteOn) {
-              try {
-                MIDI.noteOn(0, midiNoteNumber, velocity, 0);
-                console.log('✅ MIDI noteOn called:', midiNoteNumber);
-              } catch (e) {
-                console.error('❌ MIDI.noteOn error:', e);
-              }
-            }
-            
-            // Animate the 3D piano key
-            if (typeof window.setKey === 'function') {
-              try {
-                window.setKey(pianoKey, true, 0);
-                console.log('✅ setKey ON called:', pianoKey);
-              } catch (e) {
-                console.error('❌ setKey error:', e);
-              }
-            }
-            
-            // Visual feedback for fingers
-            if (window.notesState && window.settings && window.settings["Animate Fingers"]) {
-              try {
-                window.notesState[0][pianoKey] = true;
-                if (typeof window.animateFingers === 'function') {
-                  window.animateFingers(window.notesState, window.rigHelper, window.mixamorig, 0, true);
-                  console.log('✅ animateFingers called for note:', pianoKey);
-                }
-              } catch (e) {
-                console.error('❌ animateFingers error:', e);
-              }
-            }
+          MIDI.noteOn(0, midiNoteNumber, velocity, 0);
+          console.log('✅ MIDI noteOn called:', midiNoteNumber);
+        } catch (e) {
+          console.error('❌ MIDI.noteOn error:', e);
+        }
+      }
+      
+      // Animate the 3D piano key
+      if (typeof window.setKey === 'function') {
+        try {
+          window.setKey(pianoKey, true, 0);
+          console.log('✅ setKey ON called:', pianoKey);
+        } catch (e) {
+          console.error('❌ setKey error:', e);
+        }
+      }
+      
+      // **NEW: Position hands/arms before animating fingers**
+      if (window.mixamorig && window.rigHelper && typeof window.setHandById === 'function') {
+        try {
+          // Position the right hand to the correct key location
+          const keyId = (pianoKey - 88 + 1) * -1; // Right hand formula
+          window.setHandById(keyId, 0); // track 0 = right hand
+          console.log('✅ Hand positioned for key:', pianoKey);
+        } catch (e) {
+          console.error('❌ setHandById error:', e);
+        }
+      }
+      
+      // Visual feedback for fingers
+      if (window.notesState && window.settings && window.settings["Animate Fingers"]) {
+        try {
+          window.notesState[0][pianoKey] = true;
+          if (typeof window.animateFingers === 'function') {
+            window.animateFingers(window.notesState, window.rigHelper, window.mixamorig, 0, true);
+            console.log('✅ animateFingers called for note:', pianoKey);
           }
         } catch (e) {
-          console.error('❌ onNotePress error:', e);
+          console.error('❌ animateFingers error:', e);
         }
-        
-        // Call the original callback if provided
-        if (options.onNotePress) {
-          try {
-            options.onNotePress(midiNoteNumber, velocity);
-          } catch (e) {
-            console.error('❌ options.onNotePress error:', e);
-          }
-        }
-      },
+      }
+    }
+  } catch (e) {
+    console.error('❌ onNotePress error:', e);
+  }
+  
+  if (options.onNotePress) {
+    try {
+      options.onNotePress(midiNoteNumber, velocity);
+    } catch (e) {
+      console.error('❌ options.onNotePress error:', e);
+    }
+  }
+},
       onNoteRelease: (midiNoteNumber) => {
         console.log('🎹 DualCameraView: Note OFF', midiNoteNumber);
         
         try {
+              if (typeof window.recordNote === 'function') {
+      window.recordNote(midiNoteNumber, 100, false);
+    }
           const pianoKey = midiNoteNumber - 21;
           
           if (pianoKey >= 0 && pianoKey < 88) {
