@@ -39,19 +39,39 @@
 <body id="body">
     <!-- Preloader -->
     <div id="preloader">
-            <div id="status">
-                    <p class="preloader-p">Loading...</p>
-                    <div class="preloader" aria-busy="true" aria-label="Loading, please wait." role="progressbar"></div>
-            </div>
+        <div id="status">
+            <p class="preloader-p">Loading...</p>
+            <div class="preloader" aria-busy="true" aria-label="Loading, please wait." role="progressbar"></div>
+        </div>
     </div>
     <!-- ./Preloader -->
+
+    <!-- Main Grid Layout -->
+<!-- Main Grid Layout -->
+<div id="app-grid">
+    <!-- Left Panel: 3D Canvas + Note History Overlay -->
+    <div id="canvas-container">
+        <!-- Note History Overlay (moved here) -->
+        <div id="note-history-overlay">
+            <div id="note-history-list"></div>
+        </div>
+    </div>
+    
+    <!-- Right Sidebar: Cameras ONLY -->
+    <div id="sidebar-container">
+        <div id="camera-stack"></div>
+    </div>
+</div>
+
+    <!-- Overlays (stay outside grid) -->
     <div id="info">
         Space Pianist MIDI Player made with <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a></br>
         Drag and drop your MIDI files to play.
         <div id="songname"></div>
         <div id="pianoLoading"></div>
     </div>
-    <div id="bot-div" style="position: fixed;bottom: 0; left:0;width: 100%;">
+
+    <!--<div id="bot-div" style="position: fixed;bottom: 0; left:0;width: 100%; z-index: 2000;">
         <div class="player_bar">
             <div class="player" style="height: 42px; box-shadow: 0 -1px #000; margin-bottom: 0;">
                 <div class="time-controls" style="float: left; margin: 0; position: relative; top: 5px; display: flex">
@@ -64,24 +84,22 @@
                 </div>
             </div>
         </div>
-    </div>
-    <!-- Sheet Music Display (OSMD) -->
-    <div id="sheet-music-container" style="position: fixed; top: 80px; left: 10px; width: 400px; height: 300px; background: rgba(255,255,255,0.95); z-index: 1000; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow: auto;"></div>
+    </div>-->
 
-    <!-- OpenSheetMusicDisplay -->
+    <!-- Sheet Music Display -->
+    <!--<div id="sheet-music-container" style="position: fixed; top: 80px; left: 10px; width: 400px; height: 300px; background: rgba(255,255,255,0.95); z-index: 1000; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow: auto;"></div>
+-->
+    <!-- All your existing scripts stay the same -->
     <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.4/build/opensheetmusicdisplay.min.js"></script>
     <script>
-        var static_url = "./"; //for django adapt {% static %}
+        var static_url = "./";
     </script>
     
-    <!-- MediaPipe Hands (Primary) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <!-- Add this before the closing </body> tag, after the other scripts -->
-<script src="js/airPianoController.js"></script>
-    <!-- TensorFlow.js (Fallback) -->
+    
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
@@ -89,58 +107,48 @@
     
     <script type="module" src="js/main.js"></script>
     <script>
-    // Sheet music logi: load and render MusicXML via OSMD
-    // call showSheetMusic(midiFileName) when a MIDI file is loaded/played
-    let osmd = null;
-    async function showSheetMusic(midiFileName) {
-        console.log('Showing sheet music for:', midiFileName); // Debug log
-        const container = document.getElementById('sheet-music-container');
-        
-        // Initialize OSMD if needed
-        if (!osmd) {
-            osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(container, {
-                drawingParameters: 'compact',
-                autoResize: true,
-                drawTitle: true
-            });
-        }
-
-        try {
-            // Only proceed if sheet music is enabled in settings
-            if (window.settings && !window.settings['Show sheet music']) {
-                container.style.display = 'none';
-                return;
+        let osmd = null;
+        async function showSheetMusic(midiFileName) {
+            console.log('Showing sheet music for:', midiFileName);
+            const container = document.getElementById('sheet-music-container');
+            
+            if (!osmd) {
+                osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(container, {
+                    drawingParameters: 'compact',
+                    autoResize: true,
+                    drawTitle: true
+                });
             }
-            
-            container.style.display = 'block';
-            
-            // 1. Search Flat.io for a matching score
-            console.log('Searching Flat.io for:', midiFileName); // Debug log
-            const searchRes = await fetch(`/api/flat/search?q=${encodeURIComponent(midiFileName)}`);
-            if (!searchRes.ok) throw new Error('Flat.io search failed');
-            const searchData = await searchRes.json();
-            if (!searchData || !searchData.length) throw new Error('No sheet music found on Flat.io');
-            
-            // 2. Get the first score's MusicXML
-            const scoreId = searchData[0].id;
-            console.log('Found score ID:', scoreId); // Debug log
-            const xmlRes = await fetch(`/api/flat/musicxml?id=${encodeURIComponent(scoreId)}`);
-            if (!xmlRes.ok) throw new Error('Failed to fetch MusicXML from Flat.io');
-            const musicXML = await xmlRes.text();
-            
-            await osmd.load(musicXML);
-            osmd.render();
-        } catch (e) {
-            container.innerHTML = '<div style="color:red;padding:1em;">Sheet music unavailable.<br>' + e.message + '</div>';
+
+            try {
+                if (window.settings && !window.settings['Show sheet music']) {
+                    container.style.display = 'none';
+                    return;
+                }
+                
+                container.style.display = 'block';
+                const searchRes = await fetch(`/api/flat/search?q=${encodeURIComponent(midiFileName)}`);
+                if (!searchRes.ok) throw new Error('Flat.io search failed');
+                const searchData = await searchRes.json();
+                if (!searchData || !searchData.length) throw new Error('No sheet music found on Flat.io');
+                
+                const scoreId = searchData[0].id;
+                console.log('Found score ID:', scoreId);
+                const xmlRes = await fetch(`/api/flat/musicxml?id=${encodeURIComponent(scoreId)}`);
+                if (!xmlRes.ok) throw new Error('Failed to fetch MusicXML from Flat.io');
+                const musicXML = await xmlRes.text();
+                
+                await osmd.load(musicXML);
+                osmd.render();
+            } catch (e) {
+                container.innerHTML = '<div style="color:red;padding:1em;">Sheet music unavailable.<br>' + e.message + '</div>';
+            }
         }
-    }
-    function hideSheetMusic() {
-        const container = document.getElementById('sheet-music-container');
-        container.style.display = 'none';
-        if (osmd) osmd.clear();
-    }
-    // To sync playback position call osmd.cursor.show() and osmd.cursor.next() as MIDI plays
-    // See main.js for integration.
+        function hideSheetMusic() {
+            const container = document.getElementById('sheet-music-container');
+            container.style.display = 'none';
+            if (osmd) osmd.clear();
+        }
     </script>
 </body>
 </html>

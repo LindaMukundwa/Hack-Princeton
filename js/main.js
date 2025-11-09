@@ -18,6 +18,9 @@ var mixamorig, rigHelper, headTarget = 0, futurAverage, headTargetTime, headStar
 var notesState = [new Array(88), new Array(88)];
 let teacherView;
 let dualCameraView;
+// Note History Tracking
+const noteHistory = [];
+const MAX_HISTORY = 50;
 
 var notesState = [new Array(88), new Array(88)];
 
@@ -77,7 +80,7 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 30000);
     camera.position.set(-30, 100, 100);
@@ -289,7 +292,38 @@ function openPiano(init = false) {
     }
 }
 
+// Note History Functions
+function logNoteToHistory(midiNoteNumber, velocity) {
+    const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const octave = Math.floor((midiNoteNumber - 12) / 12);
+    const noteName = noteNames[midiNoteNumber % 12] + octave;
+    
+    const timestamp = new Date().toLocaleTimeString();
+    
+    const noteItem = {
+        name: noteName,
+        midi: midiNoteNumber,
+        velocity: velocity,
+        time: timestamp
+    };
+    
+    noteHistory.unshift(noteItem);
+    if (noteHistory.length > MAX_HISTORY) noteHistory.pop();
+    
+    updateNoteHistoryDOM();
+}
 
+function updateNoteHistoryDOM() {
+    const listEl = document.getElementById('note-history-list');
+    if (!listEl) return;
+    
+    listEl.innerHTML = noteHistory.map(note => `
+        <div class="note-item">
+            <span class="note-name">${note.name}</span>
+            <span class="note-meta">MIDI ${note.midi} • ${note.time}</span>
+        </div>
+    `).join('');
+}
 function rigInit() {
     pianistModel.getObjectByName('mixamorigLeftUpLeg').rotation.x = -1.1;
     pianistModel.getObjectByName('mixamorigRightUpLeg').rotation.x = -1.1;
@@ -861,6 +895,8 @@ document.addEventListener('keydown', function (event) {
 
 // set keyOn of keyOff 
 let setKey = function (pianoKey, keyOn, track) {
+    // ADD THIS LINE:
+    if (keyOn) logNoteToHistory(pianoKey + 21, 100);
     if (track != undefined)
         notesState[track % 2][pianoKey] = keyOn
     if ((keyOn && pianoKeys[pianoKey].isOn) || (!keyOn && !pianoKeys[pianoKey].isOn))

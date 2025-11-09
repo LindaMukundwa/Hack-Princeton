@@ -242,3 +242,350 @@ a, select {
         transform: rotate(359deg)
     }
 }
+/* ============================================ */
+/* GRID LAYOUT - Air Piano UI Refactor */
+/* ============================================ */
+
+/* Main Grid Layout */
+#app-grid {
+    display: grid;
+    grid-template-columns: 75% 25%;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+
+/* Left Panel - 3D Canvas Container */
+#canvas-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
+
+#canvas-container canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+}
+
+/* ============================================ */
+/* RIGHT SIDEBAR - Camera Views */
+/* ============================================ */
+
+#sidebar-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    background: linear-gradient(180deg, rgba(10, 10, 20, 0.98) 0%, rgba(15, 15, 30, 0.98) 100%);
+    overflow: hidden;
+    border-left: 2px solid rgba(59, 130, 246, 0.4);
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Camera Stack Container */
+#camera-stack {
+    flex: 1;
+    width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+#camera-stack::-webkit-scrollbar {
+    width: 8px;
+}
+
+#camera-stack::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+}
+
+#camera-stack::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.5);
+    border-radius: 4px;
+    border: 2px solid rgba(10, 10, 20, 0.98);
+}
+
+#camera-stack::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.7);
+}
+
+/* Air Piano Container Styles Override */
+#airPianoPIP {
+    width: 100% !important;
+    background: transparent !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    position: relative !important;
+    bottom: auto !important;
+    right: auto !important;
+    height: auto !important;
+}
+
+/* Header */
+#airPianoPIP > div:first-of-type {
+    background: rgba(59, 130, 246, 0.15);
+    padding: 12px !important;
+    border-radius: 8px 8px 0 0;
+    border-bottom: 2px solid rgba(59, 130, 246, 0.3);
+    margin-bottom: 12px !important;
+}
+
+/* Octave Selector */
+#airPianoPIP > div:nth-of-type(2) {
+    background: rgba(30, 41, 59, 0.8);
+    padding: 10px 12px !important;
+    border-radius: 6px;
+    margin-bottom: 12px !important;
+    border: 1px solid rgba(71, 85, 105, 0.5);
+}
+
+#octaveSelect {
+    padding: 6px 12px !important;
+    font-size: 13px !important;
+    background: rgba(15, 23, 42, 0.9) !important;
+    border: 1px solid rgba(59, 130, 246, 0.4) !important;
+    transition: all 0.2s ease;
+}
+
+#octaveSelect:hover {
+    border-color: rgba(59, 130, 246, 0.6) !important;
+    background: rgba(15, 23, 42, 1) !important;
+}
+
+#octaveSelect:focus {
+    outline: none;
+    border-color: rgba(59, 130, 246, 0.8) !important;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+/* Camera Views Wrapper */
+#airPianoPIP > div:nth-of-type(3) {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+}
+
+/* Individual Camera Containers */
+#airPianoPIP canvas {
+    border-radius: 6px !important;
+}
+
+/* Buttons Row */
+#airPianoPIP > div:nth-of-type(4) {
+    margin-top: 12px !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+}
+
+#airPianoPIP > div:nth-of-type(4) button {
+    padding: 10px 12px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    border: none !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    text-transform: none !important;
+}
+
+/* Calibrate Button */
+#airPianoPIP > div:nth-of-type(4) button:nth-child(1) {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
+    box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3) !important;
+}
+
+#airPianoPIP > div:nth-of-type(4) button:nth-child(1):hover {
+    background: linear-gradient(135deg, #047857 0%, #065f46 100%) !important;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4) !important;
+    transform: translateY(-1px);
+}
+
+/* Draw Button */
+#airPianoPIP > div:nth-of-type(4) button:nth-child(2) {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3) !important;
+}
+
+#airPianoPIP > div:nth-of-type(4) button:nth-child(2):hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4) !important;
+    transform: translateY(-1px);
+}
+
+/* Close Button - Full Width on Second Row */
+#airPianoPIP > div:nth-of-type(4) button:nth-child(3) {
+    grid-column: 1 / -1 !important;
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3) !important;
+}
+
+#airPianoPIP > div:nth-of-type(4) button:nth-child(3):hover {
+    background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%) !important;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4) !important;
+    transform: translateY(-1px);
+}
+
+/* Status Display */
+#airPianoStatus {
+    margin-top: 12px !important;
+    padding: 10px 12px !important;
+    background: rgba(30, 41, 59, 0.6) !important;
+    border-radius: 6px !important;
+    border-left: 3px solid rgba(59, 130, 246, 0.6) !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+}
+
+/* Camera Labels Styling */
+#airPianoPIP canvas + video + div,
+#airPianoPIP > div:nth-of-type(3) > div > div:first-child {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    backdrop-filter: blur(8px) !important;
+}
+
+/* ============================================ */
+/* NOTE HISTORY OVERLAY - Left Side */
+/* ============================================ */
+
+#note-history-overlay {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 280px;
+    height: 100%;
+    background: transparent;
+    pointer-events: none;
+    z-index: 100;
+    overflow: hidden;
+}
+
+#note-history-list {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    padding: 20px 12px;
+    pointer-events: auto;
+}
+
+/* Custom Scrollbar for Note History */
+#note-history-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+#note-history-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#note-history-list::-webkit-scrollbar-thumb {
+    background: rgba(59, 130, 246, 0.3);
+    border-radius: 2px;
+}
+
+#note-history-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(59, 130, 246, 0.5);
+}
+
+/* Note History Items - New Design */
+.note-item {
+    background: rgba(0, 0, 0, 0);  /* Fully transparent */
+    padding: 4px 8px;
+    margin-bottom: 2px;
+    border-left: 3px solid rgba(34, 197, 94, 0.6);
+    border-radius: 2px;
+    animation: slideInLeft 0.3s ease-out;
+    pointer-events: none;
+}
+
+@keyframes slideInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Big Note Name */
+.note-item .note-name {
+    display: block;
+    font-weight: 700;
+    font-size: 28px;
+    color: #22c55e;
+    line-height: 1;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    letter-spacing: 0.5px;
+}
+
+/* Small Metadata - Single Line */
+.note-item .note-meta {
+    display: block;
+    font-size: 10px;
+    color: #94a3b8;
+    margin-top: 2px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+    opacity: 0.8;
+}
+
+/* Remove old styles */
+.note-item .note-midi,
+.note-item .note-timestamp {
+    display: none;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 1400px) {
+    #app-grid {
+        grid-template-columns: 70% 30%;
+    }
+}
+
+@media (max-width: 1024px) {
+    #app-grid {
+        grid-template-columns: 65% 35%;
+    }
+    
+    #note-history-overlay {
+        width: 200px;
+    }
+    
+    .note-item .note-name {
+        font-size: 24px;
+    }
+}
+
+@media (max-width: 768px) {
+    #app-grid {
+        grid-template-columns: 100%;
+        grid-template-rows: 60vh auto;
+    }
+    
+    #sidebar-container {
+        border-left: none;
+        border-top: 2px solid rgba(59, 130, 246, 0.4);
+        max-height: 40vh;
+    }
+    
+    #note-history-overlay {
+        display: none; /* Hide on mobile */
+    }
+}

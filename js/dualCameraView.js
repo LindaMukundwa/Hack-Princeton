@@ -39,11 +39,17 @@ class AirPianoController {
     // internal detector
     this.detector = new AirPianoPressDetector();
   }
-
-  createDOM() {
+createDOM() {
     const container = document.createElement('div');
     container.id = 'airPianoPIP';
-    container.style.cssText = `position: fixed; bottom: 50px; right: 20px; width: 680px; height: 440px; background: rgba(10,10,20,0.95); border-radius: 12px; overflow: visible; z-index: 3000; box-shadow: 0 12px 48px rgba(0,0,0,0.8); padding: 12px; border: 2px solid rgba(59, 130, 246, 0.3);`;
+    container.style.cssText = `
+        width: 100%;
+        background: transparent;
+        padding: 12px;
+        border: none;
+        box-shadow: none;
+        position: relative;
+    `;
 
     // header
     const header = document.createElement('div');
@@ -65,12 +71,12 @@ class AirPianoController {
     `;
     container.appendChild(octaveSelector);
 
-    // two canvases side-by-side
+    // two canvases stacked vertically
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display:flex; gap:8px; height:280px;';
+    wrapper.style.cssText = 'display:flex; flex-direction:column; gap:8px;';
 
     const topWrap = document.createElement('div');
-    topWrap.style.cssText = 'flex:1; position:relative; background:#000; border-radius:6px; overflow:hidden; border:1px solid rgba(34, 197, 94, 0.3);';
+    topWrap.style.cssText = 'width:100%; height:200px; position:relative; background:#000; border-radius:6px; overflow:hidden; border:1px solid rgba(34, 197, 94, 0.3);';
     const topLabel = document.createElement('div'); 
     topLabel.innerText = 'TOP: Position Tracking'; 
     topLabel.style.cssText = 'position:absolute; top:6px; left:6px; background:rgba(34, 197, 94, 0.9); color:#fff; padding:4px 10px; border-radius:4px; z-index:20; font-size:11px; font-weight:600;';
@@ -87,7 +93,7 @@ class AirPianoController {
     topWrap.appendChild(videoTop);
 
     const sideWrap = document.createElement('div');
-    sideWrap.style.cssText = 'width:320px; position:relative; background:#000; border-radius:6px; overflow:hidden; border:1px solid rgba(168, 85, 247, 0.3);';
+    sideWrap.style.cssText = 'width:100%; height:200px; position:relative; background:#000; border-radius:6px; overflow:hidden; border:1px solid rgba(168, 85, 247, 0.3);';
     const sideLabel = document.createElement('div'); 
     sideLabel.innerText = 'SIDE: Press Detection'; 
     sideLabel.style.cssText = 'position:absolute; top:6px; left:6px; background:rgba(168, 85, 247, 0.9); color:#fff; padding:4px 10px; border-radius:4px; z-index:20; font-size:11px; font-weight:600;';
@@ -113,24 +119,29 @@ class AirPianoController {
     container.appendChild(wrapper);
 
     // buttons row
-    const controls = document.createElement('div'); 
-    controls.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
-    const calibrateBtn = document.createElement('button'); 
-    calibrateBtn.innerText = '📏 Calibrate Desk'; 
-    calibrateBtn.style.cssText = 'flex:1; padding:8px 12px; background:#059669; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none;';
-    calibrateBtn.addEventListener('click', ()=> this.startCalibration());
-    const drawBtn = document.createElement('button'); 
-    drawBtn.innerText = '✏️ Draw Keyboard'; 
-    drawBtn.style.cssText = 'flex:1; padding:8px 12px; background:#2563eb; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none;';
-    drawBtn.addEventListener('click', ()=> this.openDrawModal());
-    const stopBtn = document.createElement('button'); 
-    stopBtn.innerText = '❌ Close'; 
-    stopBtn.style.cssText = 'flex:0 0 auto; padding:8px 16px; background:#ef4444; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none;';
-    stopBtn.addEventListener('click', ()=> this.stop());
-    controls.appendChild(calibrateBtn); 
-    controls.appendChild(drawBtn); 
-    controls.appendChild(stopBtn);
-    container.appendChild(controls);
+// buttons row
+const controls = document.createElement('div'); 
+controls.style.cssText = 'display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px;';
+
+const calibrateBtn = document.createElement('button'); 
+calibrateBtn.innerText = '📏 Calibrate'; 
+calibrateBtn.style.cssText = 'padding:10px 12px; background:#059669; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none; transition:all 0.2s ease;';
+calibrateBtn.addEventListener('click', ()=> this.startCalibration());
+
+const drawBtn = document.createElement('button'); 
+drawBtn.innerText = '✏️ Draw Area'; 
+drawBtn.style.cssText = 'padding:10px 12px; background:#2563eb; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none; transition:all 0.2s ease;';
+drawBtn.addEventListener('click', ()=> this.openDrawModal());
+
+const stopBtn = document.createElement('button'); 
+stopBtn.innerText = '❌ Close'; 
+stopBtn.style.cssText = 'grid-column:1/-1; padding:10px 12px; background:#dc2626; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none; transition:all 0.2s ease;';
+stopBtn.addEventListener('click', ()=> this.stop());
+
+controls.appendChild(calibrateBtn); 
+controls.appendChild(drawBtn); 
+controls.appendChild(stopBtn);
+container.appendChild(controls);
 
     // Status indicator
     const status = document.createElement('div');
@@ -142,10 +153,16 @@ class AirPianoController {
     // hidden draw canvas overlay
     const drawCanvas = document.createElement('canvas'); 
     drawCanvas.id = 'airPianoDrawCanvas'; 
-    drawCanvas.style.cssText = 'position:absolute; left:12px; top:80px; width:calc(100% - 344px); height:280px; display:none; z-index:4000; cursor:crosshair; border:2px solid #3b82f6; border-radius:6px;';
+    drawCanvas.style.cssText = 'position:absolute; left:12px; top:80px; width:calc(100% - 24px); height:200px; display:none; z-index:4000; cursor:crosshair; border:2px solid #3b82f6; border-radius:6px;';
     container.appendChild(drawCanvas);
 
-    document.body.appendChild(container);
+    // Append to camera-stack instead of body
+    const cameraStack = document.getElementById('camera-stack');
+    if (cameraStack) {
+        cameraStack.appendChild(container);
+    } else {
+        document.body.appendChild(container);
+    }
 
     // wire refs
     this.container = container;
@@ -165,7 +182,7 @@ class AirPianoController {
       this.octaveStart = parseInt(e.target.value);
       console.log('Air Piano octave changed to:', this.octaveStart);
     });
-  }
+}
 
   async start() {
     if (!this.container) this.createDOM();
