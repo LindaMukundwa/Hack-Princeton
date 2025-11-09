@@ -78,7 +78,7 @@ body {
 	margin: 0;
 	background-color: #000;
 	color: #fff;
-	font-family: Monospace;
+	font-family: Candara, "Segoe UI", Arial, sans-serif;
 	font-size: 13px;
 	line-height: 24px;
 	overscroll-behavior: none;
@@ -479,6 +479,7 @@ a, select {
     left: 0;
     top: 0;
     width: 100%;
+    font-family: Candara, "Segoe UI", Arial, sans-serif;
     height: 100%;
     overflow-y: auto;
     padding: 20px 12px;

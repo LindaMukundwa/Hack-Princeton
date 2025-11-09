@@ -1,0 +1,29 @@
+.dg.main {
+    transition: opacity 0.3s ease;
+    z-index: 10000 !important; /* Ensure GUI is above the sidebar/cameras */
+}
+
+#airPianoPIP > div:nth-of-type(4) button:nth-child(3) {
+    cursor: pointer;
+}
+
+.dg.main.taller-than-window {
+    overflow-y: auto;
+}
+
+.dg.main.taller-than-window .close-button {
+    position: fixed;
+    top: 0;
+    right: 0;
+}
+
+/* When GUI is active, make sidebar/camera stack not intercept mouse events */
+body.gui-panel-active #sidebar-container,
+body.gui-panel-active #camera-stack {
+    pointer-events: none;
+}
+
+/* Optional: subtle dim (visual only) while GUI is hovered */
+body.gui-panel-active #sidebar-container {
+    opacity: 0.99;
+}
