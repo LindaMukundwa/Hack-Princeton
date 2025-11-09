@@ -2,7 +2,7 @@
 
 > **"Learn piano anywhere, no instrument required"**
 
-![Logo](images/logo.png)
+![Logo](images/AiRPianoLogo.png)
 
 AiRPiano is an innovative web-based platform that makes music education accessible to everyone by transforming any space into a virtual piano studio. Using computer vision and 3D graphics, students can learn and practice piano without owning an instrument, just a webcam and a browser.
 
