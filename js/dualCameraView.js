@@ -825,6 +825,11 @@ class DualCameraView {
         try {
           MIDI.noteOn(0, midiNoteNumber, velocity, 0);
           console.log('✅ MIDI noteOn called:', midiNoteNumber);
+          
+          // Check against teaching exercise if teacher mode is enabled
+          if (typeof window.teacherView !== 'undefined' && window.teacherView) {
+            window.teacherView.checkPlayedNote(midiNoteNumber);
+          }
         } catch (e) {
           console.error('❌ MIDI.noteOn error:', e);
         }

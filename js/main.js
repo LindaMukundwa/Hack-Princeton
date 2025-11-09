@@ -555,6 +555,9 @@ function buildLiveMusicXML(notes) {
 function updateLiveStaff() {
     if (!liveOsmd) return;
     
+    // Don't update staff during teacher mode - exercise display takes priority
+    if (window.teacherView) return;
+    
     // Respect settings if available
     if (typeof settings !== 'undefined' && settings['Show sheet music'] === false) {
         if (liveStaffContainer) liveStaffContainer.style.display = 'none';
@@ -1119,10 +1122,11 @@ let createGui = function () {
         'Show piano model': true,
         'Show sheet music': true,
         'Enable Teacher Mode': false,
+        '🔄 Reset Exercise': () => { if (teacherView) teacherView.resetExercise(); },
         'Enable Dual Cameras': true,
         'Enable Air Piano': false,
-          'Press Sensitivity': 40,  // pressThreshold in mm
-  'Lift Height': 70,         // liftThreshold in mm
+        'Press Sensitivity': 40,
+        'Lift Height': 70,
   'Note Cooldown (ms)': 100, // cooldownTime
         // Recording controls
         '🔴 Start Recording': startRecording,
@@ -1181,7 +1185,7 @@ let createGui = function () {
     
     let teacherFolder = panel.addFolder('Teacher Mode');
     teacherFolder.add(settings, "Enable Teacher Mode").onChange(toggleTeacherMode);
-    teacherFolder.add(settings, "Calibrate Teacher");
+    teacherFolder.add(settings, "🔄 Reset Exercise");
 
     let dualFolder = panel.addFolder('Dual Cameras');
     dualFolder.add(settings, "Enable Dual Cameras").onChange(toggleDualCameras);
@@ -1415,10 +1419,42 @@ let pausePlayStop = function (stop) {
 
 let toggleTeacherMode = function(enabled) {
     if (enabled && !teacherView) {
+        // Teacher Mode requires Dual Cameras - enable it if not already
+        if (!dualCameraView) {
+            console.log('🎥 Auto-enabling Dual Cameras for Teacher Mode...');
+            settings['Enable Dual Cameras'] = true;
+            toggleDualCameras(true);
+        }
+        
+        // Make sure live staff is initialized
+        if (!liveOsmd) {
+            initLiveStaff();
+        }
+        
         teacherView = new TeacherView();
+        window.teacherView = teacherView; // Make globally accessible
+        
+        // Render exercise after a short delay to ensure OSMD is ready
+        setTimeout(() => {
+            if (teacherView) {
+                teacherView.renderExerciseOnStaff();
+            }
+        }, 200);
+        
+        console.log('✅ Teacher Mode enabled');
     } else if (!enabled && teacherView) {
         teacherView.dispose();
         teacherView = null;
+        window.teacherView = null; // Clear global reference
+        
+        // Restore normal note history display
+        if (liveOsmd && noteHistory.length === 0) {
+            renderEmptyStaff();
+        } else if (liveOsmd) {
+            updateLiveStaff();
+        }
+        
+        console.log('❌ Teacher Mode disabled');
     }
 }
 
