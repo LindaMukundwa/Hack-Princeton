@@ -3,7 +3,7 @@
 > **"Learn piano anywhere, no instrument required"**
 
 <p align="center">
-    <img src="images/AiRPianoLogo.png">p>
+    <img src="images/AiRPianoLogo.png">
 
 
 AiRPiano is an innovative web-based platform that makes music education accessible to everyone by transforming any space into a virtual piano studio. Using computer vision and 3D graphics, students can learn and practice piano without owning an instrument, just a webcam and a browser.
@@ -270,5 +270,6 @@ This project builds upon MidiPlayerJS3D. Please refer to individual library lice
 *Making music education accessible to all*
 
 </div> 
+
 
 
