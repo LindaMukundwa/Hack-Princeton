@@ -10,6 +10,7 @@ import { DualCameraView } from './dualCameraView.js';
 
 
 
+
 var camera, controls, scene, renderer, pianoKeys, player, futurBoxs = [], pianoFloor = 21, ground;
 var pianistModel, skeleton, pianoModel, panel, settings, lights = [];
 var t1 = Date.now(), previouscurrentTime = -1, currentTime = 0, clock = new THREE.Clock();
@@ -18,6 +19,9 @@ var notesState = [new Array(88), new Array(88)];
 let teacherView;
 let dualCameraView;
 
+var notesState = [new Array(88), new Array(88)];
+
+let airPianoController = null;  // ADD THIS LINE
 document.getElementById("body").addEventListener("drop", dropHandler);
 document.getElementById("body").addEventListener("dragover", dragOverHandler);
 
@@ -595,7 +599,6 @@ let createFuturBox = function (clearBox = true) {
         }
     }
 };
-
 let createGui = function () {
 
     panel = new GUI({ width: 310 });
@@ -614,16 +617,16 @@ let createGui = function () {
         'Animate Fingers': true,
         'Show piano model': true,
         'Show sheet music': true,
-    'Enable Teacher Mode': false,
-    'Enable Dual Cameras': true,
+        'Enable Teacher Mode': false,
+        'Enable Dual Cameras': true,
+        'Enable Air Piano': false,  // ADD THIS LINE
         'Calibrate Teacher': () => {
             if (teacherView) {
                 teacherView.calibrate();
             } else {
                 alert('Enable Teacher Mode first');
             }
-        }
-        ,
+        },
         'Calibrate Dual Cameras': () => {
             if (dualCameraView) {
                 dualCameraView.calibrate();
@@ -642,7 +645,6 @@ let createGui = function () {
         const container = document.getElementById('sheet-music-container');
         if (visible) {
             container.style.display = 'block';
-            // If there's a current song playing, show its sheet music
             if (songname && songname[songid % songname.length]) {
                 showSheetMusic(songname[songid % songname.length] + '.mid');
             }
@@ -651,6 +653,7 @@ let createGui = function () {
         }
     });
     playerFolder.add(settings, "Open Midi File");
+    
     let teacherFolder = panel.addFolder('Teacher Mode');
     teacherFolder.add(settings, "Enable Teacher Mode").onChange(toggleTeacherMode);
     teacherFolder.add(settings, "Calibrate Teacher");
@@ -658,6 +661,10 @@ let createGui = function () {
     let dualFolder = panel.addFolder('Dual Cameras');
     dualFolder.add(settings, "Enable Dual Cameras").onChange(toggleDualCameras);
     dualFolder.add(settings, "Calibrate Dual Cameras");
+
+    // ADD THIS NEW AIR PIANO FOLDER HERE:
+    let airPianoFolder = panel.addFolder('Air Piano (Experimental)');
+    airPianoFolder.add(settings, "Enable Air Piano").onChange(toggleAirPiano);
 
     const elements = document.getElementsByClassName("closed");
     for (let el of elements) {
@@ -819,9 +826,26 @@ let toggleDualCameras = function(enabled) {
             teacherView.dispose();
             teacherView = null;
         }
-        dualCameraView = new DualCameraView({ onCalibrated: (baseline) => {
-            console.log('DualCameraView calibrated baseline:', baseline);
-        }});
+        
+        // IMPORTANT: Expose necessary functions and state globally for DualCameraView
+        window.notesState = notesState;
+        window.rigHelper = rigHelper;
+        window.mixamorig = mixamorig;
+        window.setKey = setKey;
+        window.animateFingers = animateFingers;
+        window.settings = settings;
+        
+        console.log('🎹 Initializing DualCameraView with 3D piano integration...');
+        console.log('MIDI available:', typeof MIDI !== 'undefined');
+        console.log('setKey available:', typeof setKey === 'function');
+        console.log('animateFingers available:', typeof animateFingers === 'function');
+        
+        dualCameraView = new DualCameraView({ 
+            octaveStart: 60, // Middle C octave
+            onCalibrated: (baseline) => {
+                console.log('✅ DualCameraView calibrated baseline:', baseline);
+            }
+        });
         dualCameraView.start();
     } else if (!enabled && dualCameraView) {
         dualCameraView.stop();
@@ -970,3 +994,67 @@ let MIDIPlayerPercentage = function (player) {
     }
     window.player = player;
 };
+// ============================================
+// AIR PIANO INTEGRATION
+// ============================================
+
+function toggleAirPiano(enabled) {
+    if (enabled && !airPianoController) {
+        // Disable dual cameras and teacher mode if active
+        if (dualCameraView) {
+            settings['Enable Dual Cameras'] = false;
+            toggleDualCameras(false);
+        }
+        if (teacherView) {
+            settings['Enable Teacher Mode'] = false;
+            toggleTeacherMode(false);
+        }
+        
+        // Create air piano controller with callbacks to 3D piano
+        airPianoController = new AirPianoController({
+            octaveStart: 60, // C4 (middle C)
+            onNotePress: (midiNoteNumber, velocity) => {
+                // Trigger the 3D piano key press
+                const pianoKey = midiNoteNumber - 21; // Piano keys are 0-87 (A0-C8)
+                if (pianoKey >= 0 && pianoKey < 88) {
+                    // Play the note through MIDI
+                    MIDI.noteOn(0, midiNoteNumber, velocity, 0);
+                    
+                    // Animate the 3D piano key
+                    setKey(pianoKey, true, 0);
+                    
+                    // Visual feedback for fingers
+                    if (settings["Animate Fingers"]) {
+                        notesState[0][pianoKey] = true;
+                        animateFingers(notesState, rigHelper, mixamorig, 0, true);
+                    }
+                }
+            },
+            onNoteRelease: (midiNoteNumber) => {
+                // Release the 3D piano key
+                const pianoKey = midiNoteNumber - 21;
+                if (pianoKey >= 0 && pianoKey < 88) {
+                    // Stop the note
+                    MIDI.noteOff(0, midiNoteNumber, 0);
+                    
+                    // Animate the 3D piano key release
+                    setKey(pianoKey, false, 0);
+                    
+                    // Visual feedback for fingers
+                    if (settings["Animate Fingers"]) {
+                        notesState[0][pianoKey] = false;
+                        animateFingers(notesState, rigHelper, mixamorig, 0, true);
+                    }
+                }
+            }
+        });
+        
+        airPianoController.start();
+    } else if (!enabled && airPianoController) {
+        airPianoController.stop();
+        airPianoController = null;
+    }
+}
+
+// Expose globally for GUI access
+window.toggleAirPiano = toggleAirPiano;

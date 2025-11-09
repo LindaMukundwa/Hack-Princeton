@@ -1,10 +1,12 @@
-// Full-feature DualCameraView: ports index.html's dual-camera logic into a class
-// Provides UI (calibration + draw keyboard area), camera selection, MediaPipe hands,
-// press detection (side camera), position tracking (top camera), and a small synth for audible feedback.
+// Air Piano Controller for 3D Piano Model
+// This class uses dual cameras to detect "air piano" playing and triggers the 3D piano model
+// NO sound from the air piano itself - it acts as a silent controller for the 3D piano
 
-class DualCameraView {
+class AirPianoController {
   constructor(options = {}) {
     this.options = options;
+    this.onNotePress = options.onNotePress || function(){}; // callback to trigger 3D piano
+    this.onNoteRelease = options.onNoteRelease || function(){};
     this.container = null;
     this.videoTop = null;
     this.videoSide = null;
@@ -28,76 +30,141 @@ class DualCameraView {
     this.isDrawing = false;
     this.drawStart = null;
     this.keyPressAnimations = new Map();
-    this.onCalibrated = options.onCalibrated || function(){};
+    this.activeNotes = new Map(); // Track which notes are currently pressed
 
-    // internal detector & synth
-    this.detector = new DualCameraPressDetector();
-    this.synth = new PianoSynth();
+    // Octave selection (12 keys from C to B)
+    this.octaveStart = options.octaveStart || 48; // MIDI note number (C4 = 60, so 48 = C3)
+    this.numKeys = 12; // One octave
+
+    // internal detector
+    this.detector = new AirPianoPressDetector();
   }
 
   createDOM() {
-    // build a richer PIP container with calibration/draw modals and two camera canvases
     const container = document.createElement('div');
-    container.id = 'dualCameraPIP';
-    container.style.cssText = `position: fixed; bottom: 40px; right: 18px; width: 680px; height: 420px; background: rgba(6,6,6,0.95); border-radius: 10px; overflow: visible; z-index: 3000; box-shadow: 0 10px 40px rgba(0,0,0,0.7); padding: 10px;`;
+    container.id = 'airPianoPIP';
+    container.style.cssText = `position: fixed; bottom: 50px; right: 20px; width: 680px; height: 440px; background: rgba(10,10,20,0.95); border-radius: 12px; overflow: visible; z-index: 3000; box-shadow: 0 12px 48px rgba(0,0,0,0.8); padding: 12px; border: 2px solid rgba(59, 130, 246, 0.3);`;
 
     // header
     const header = document.createElement('div');
-    header.style.cssText = 'color:#e6fffa; font-weight:700; font-size:14px; margin-bottom:6px';
-    header.innerText = 'Dual Camera Teacher (TOP = position, SIDE = press)';
+    header.style.cssText = 'color:#60a5fa; font-weight:700; font-size:15px; margin-bottom:8px; text-align:center;';
+    header.innerHTML = '🎹 Air Piano Controller <span style="color:#94a3b8; font-size:12px; font-weight:400;">(Silent - Triggers 3D Piano)</span>';
     container.appendChild(header);
+
+    // Octave selector
+    const octaveSelector = document.createElement('div');
+    octaveSelector.style.cssText = 'display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px;';
+    octaveSelector.innerHTML = `
+      <label style="color:#94a3b8; font-size:13px;">Octave:</label>
+      <select id="octaveSelect" style="padding:4px 8px; background:#1e293b; color:#e2e8f0; border:1px solid #475569; border-radius:4px;">
+        <option value="36">C2 (Low)</option>
+        <option value="48" selected>C3</option>
+        <option value="60">C4 (Middle)</option>
+        <option value="72">C5 (High)</option>
+      </select>
+    `;
+    container.appendChild(octaveSelector);
 
     // two canvases side-by-side
     const wrapper = document.createElement('div');
-    wrapper.style.cssText = 'display:flex; gap:8px; height:300px;';
+    wrapper.style.cssText = 'display:flex; gap:8px; height:280px;';
 
     const topWrap = document.createElement('div');
-    topWrap.style.cssText = 'flex:1; position:relative; background:#000; border-radius:6px; overflow:hidden;';
-    const topLabel = document.createElement('div'); topLabel.innerText = 'TOP CAMERA'; topLabel.style.cssText = 'position:absolute; top:6px; left:6px; background:#064e3b; color:#a7f3d0; padding:4px 8px; border-radius:4px; z-index:20; font-size:12px;';
+    topWrap.style.cssText = 'flex:1; position:relative; background:#000; border-radius:6px; overflow:hidden; border:1px solid rgba(34, 197, 94, 0.3);';
+    const topLabel = document.createElement('div'); 
+    topLabel.innerText = 'TOP: Position Tracking'; 
+    topLabel.style.cssText = 'position:absolute; top:6px; left:6px; background:rgba(34, 197, 94, 0.9); color:#fff; padding:4px 10px; border-radius:4px; z-index:20; font-size:11px; font-weight:600;';
     topWrap.appendChild(topLabel);
-    const canvasTop = document.createElement('canvas'); canvasTop.id = 'pipOutputTop'; canvasTop.style.cssText = 'width:100%; height:100%; display:block;';
-    const videoTop = document.createElement('video'); videoTop.id = 'pipVideoTop'; videoTop.style.display = 'none'; videoTop.playsInline = true; videoTop.autoplay = true;
-    topWrap.appendChild(canvasTop); topWrap.appendChild(videoTop);
+    const canvasTop = document.createElement('canvas'); 
+    canvasTop.id = 'airPianoOutputTop'; 
+    canvasTop.style.cssText = 'width:100%; height:100%; display:block;';
+    const videoTop = document.createElement('video'); 
+    videoTop.id = 'airPianoVideoTop'; 
+    videoTop.style.display = 'none'; 
+    videoTop.playsInline = true; 
+    videoTop.autoplay = true;
+    topWrap.appendChild(canvasTop); 
+    topWrap.appendChild(videoTop);
 
     const sideWrap = document.createElement('div');
-    sideWrap.style.cssText = 'width:320px; position:relative; background:#000; border-radius:6px; overflow:hidden;';
-    const sideLabel = document.createElement('div'); sideLabel.innerText = 'SIDE CAMERA'; sideLabel.style.cssText = 'position:absolute; top:6px; left:6px; background:#4c1d95; color:#f0abfc; padding:4px 8px; border-radius:4px; z-index:20; font-size:12px;';
+    sideWrap.style.cssText = 'width:320px; position:relative; background:#000; border-radius:6px; overflow:hidden; border:1px solid rgba(168, 85, 247, 0.3);';
+    const sideLabel = document.createElement('div'); 
+    sideLabel.innerText = 'SIDE: Press Detection'; 
+    sideLabel.style.cssText = 'position:absolute; top:6px; left:6px; background:rgba(168, 85, 247, 0.9); color:#fff; padding:4px 10px; border-radius:4px; z-index:20; font-size:11px; font-weight:600;';
     sideWrap.appendChild(sideLabel);
-    const deskY = document.createElement('div'); deskY.id = 'pipDeskY'; deskY.innerText = 'Desk Y: Not set'; deskY.style.cssText = 'position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.5); color:#fde68a; padding:4px 6px; border-radius:4px; z-index:20; font-size:12px;';
+    const deskY = document.createElement('div'); 
+    deskY.id = 'airPianoDeskY'; 
+    deskY.innerText = 'Desk: Not set'; 
+    deskY.style.cssText = 'position:absolute; top:6px; right:6px; background:rgba(0,0,0,0.6); color:#fde68a; padding:4px 8px; border-radius:4px; z-index:20; font-size:11px;';
     sideWrap.appendChild(deskY);
-    const canvasSide = document.createElement('canvas'); canvasSide.id = 'pipOutputSide'; canvasSide.style.cssText = 'width:100%; height:100%; display:block;';
-    const videoSide = document.createElement('video'); videoSide.id = 'pipVideoSide'; videoSide.style.display = 'none'; videoSide.playsInline = true; videoSide.autoplay = true;
-    sideWrap.appendChild(canvasSide); sideWrap.appendChild(videoSide);
+    const canvasSide = document.createElement('canvas'); 
+    canvasSide.id = 'airPianoOutputSide'; 
+    canvasSide.style.cssText = 'width:100%; height:100%; display:block;';
+    const videoSide = document.createElement('video'); 
+    videoSide.id = 'airPianoVideoSide'; 
+    videoSide.style.display = 'none'; 
+    videoSide.playsInline = true; 
+    videoSide.autoplay = true;
+    sideWrap.appendChild(canvasSide); 
+    sideWrap.appendChild(videoSide);
 
-    wrapper.appendChild(topWrap); wrapper.appendChild(sideWrap);
+    wrapper.appendChild(topWrap); 
+    wrapper.appendChild(sideWrap);
     container.appendChild(wrapper);
 
     // buttons row
-    const controls = document.createElement('div'); controls.style.cssText = 'display:flex; gap:8px; margin-top:8px;';
-    const calibrateBtn = document.createElement('button'); calibrateBtn.innerText = 'Calibrate'; calibrateBtn.style.cssText = 'flex:0 0 auto; padding:6px 12px; background:#059669; color:white; border-radius:6px;';
+    const controls = document.createElement('div'); 
+    controls.style.cssText = 'display:flex; gap:8px; margin-top:10px;';
+    const calibrateBtn = document.createElement('button'); 
+    calibrateBtn.innerText = '📏 Calibrate Desk'; 
+    calibrateBtn.style.cssText = 'flex:1; padding:8px 12px; background:#059669; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none;';
     calibrateBtn.addEventListener('click', ()=> this.startCalibration());
-    const drawBtn = document.createElement('button'); drawBtn.innerText = 'Draw Keyboard'; drawBtn.style.cssText = 'flex:0 0 auto; padding:6px 12px; background:#2563eb; color:white; border-radius:6px;';
+    const drawBtn = document.createElement('button'); 
+    drawBtn.innerText = '✏️ Draw Keyboard'; 
+    drawBtn.style.cssText = 'flex:1; padding:8px 12px; background:#2563eb; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none;';
     drawBtn.addEventListener('click', ()=> this.openDrawModal());
-    const stopBtn = document.createElement('button'); stopBtn.innerText = 'Stop'; stopBtn.style.cssText = 'flex:0 0 auto; padding:6px 12px; background:#ef4444; color:white; border-radius:6px;';
+    const stopBtn = document.createElement('button'); 
+    stopBtn.innerText = '❌ Close'; 
+    stopBtn.style.cssText = 'flex:0 0 auto; padding:8px 16px; background:#ef4444; color:white; border-radius:6px; font-weight:600; cursor:pointer; border:none;';
     stopBtn.addEventListener('click', ()=> this.stop());
-    controls.appendChild(calibrateBtn); controls.appendChild(drawBtn); controls.appendChild(stopBtn);
+    controls.appendChild(calibrateBtn); 
+    controls.appendChild(drawBtn); 
+    controls.appendChild(stopBtn);
     container.appendChild(controls);
 
-    // hidden draw canvas overlay used when drawing keyboard area
-    const drawCanvas = document.createElement('canvas'); drawCanvas.id = 'pipDrawCanvas'; drawCanvas.style.cssText = 'position:absolute; left:0; top:40px; width:calc(100% - 20px); height:300px; display:none; z-index:4000;';
+    // Status indicator
+    const status = document.createElement('div');
+    status.id = 'airPianoStatus';
+    status.style.cssText = 'margin-top:8px; text-align:center; color:#94a3b8; font-size:12px;';
+    status.innerText = 'Ready to calibrate...';
+    container.appendChild(status);
+
+    // hidden draw canvas overlay
+    const drawCanvas = document.createElement('canvas'); 
+    drawCanvas.id = 'airPianoDrawCanvas'; 
+    drawCanvas.style.cssText = 'position:absolute; left:12px; top:80px; width:calc(100% - 344px); height:280px; display:none; z-index:4000; cursor:crosshair; border:2px solid #3b82f6; border-radius:6px;';
     container.appendChild(drawCanvas);
 
     document.body.appendChild(container);
 
     // wire refs
     this.container = container;
-    this.canvasTop = canvasTop; this.canvasSide = canvasSide; this.drawCanvas = drawCanvas;
-    this.videoTop = videoTop; this.videoSide = videoSide;
-    this.ctxTop = canvasTop.getContext('2d'); this.ctxSide = canvasSide.getContext('2d'); this.drawCtx = drawCanvas.getContext('2d');
-
-    // attach small state displays
+    this.canvasTop = canvasTop; 
+    this.canvasSide = canvasSide; 
+    this.drawCanvas = drawCanvas;
+    this.videoTop = videoTop; 
+    this.videoSide = videoSide;
+    this.ctxTop = canvasTop.getContext('2d'); 
+    this.ctxSide = canvasSide.getContext('2d'); 
+    this.drawCtx = drawCanvas.getContext('2d');
     this.deskYDisplay = deskY;
-    this.topHandsCountEl = null; // optional
+    this.statusDisplay = status;
+
+    // Octave change handler
+    document.getElementById('octaveSelect').addEventListener('change', (e) => {
+      this.octaveStart = parseInt(e.target.value);
+      console.log('Air Piano octave changed to:', this.octaveStart);
+    });
   }
 
   async start() {
@@ -106,12 +173,20 @@ class DualCameraView {
       await this.initCameras();
       this.initMediaPipe();
       this.processFrames();
+      this.statusDisplay.innerText = '✅ Cameras active - Please calibrate desk position';
     } catch (e) {
-      console.error('DualCameraView start error:', e);
+      console.error('AirPianoController start error:', e);
+      this.statusDisplay.innerText = '❌ Camera error: ' + e.message;
     }
   }
 
   async stop() {
+    // Release all active notes before stopping
+    this.activeNotes.forEach((_, noteNumber) => {
+      this.onNoteRelease(noteNumber);
+    });
+    this.activeNotes.clear();
+
     if (this.animationId) cancelAnimationFrame(this.animationId);
     if (this.handsTop) this.handsTop.close && this.handsTop.close();
     if (this.handsSide) this.handsSide.close && this.handsSide.close();
@@ -137,12 +212,14 @@ class DualCameraView {
       this.cameraDeviceIds = selected;
 
       this.streamTop = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: this.cameraDeviceIds[0] }, width: 1280, height: 720 }, audio: false });
-      this.videoTop.srcObject = this.streamTop; await this.videoTop.play();
+      this.videoTop.srcObject = this.streamTop; 
+      await this.videoTop.play();
 
       await new Promise(r => setTimeout(r, 250));
 
       this.streamSide = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: this.cameraDeviceIds[1] }, width: 1280, height: 720 }, audio: false });
-      this.videoSide.srcObject = this.streamSide; await this.videoSide.play();
+      this.videoSide.srcObject = this.streamSide; 
+      await this.videoSide.play();
 
       this.camerasReady = true;
     } catch (err) {
@@ -151,20 +228,30 @@ class DualCameraView {
     }
   }
 
-  initMediaPipe() {
-    if (typeof Hands === 'undefined') {
-      console.warn('MediaPipe Hands is not loaded on page - DualCameraView requires it.');
-      return;
-    }
-
-    this.handsTop = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-    this.handsTop.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
-    this.handsTop.onResults(this.onResultsTop.bind(this));
-
-    this.handsSide = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-    this.handsSide.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7, minTrackingConfidence: 0.7 });
-    this.handsSide.onResults(this.onResultsSide.bind(this));
+initMediaPipe() {
+  if (typeof Hands === 'undefined') {
+    console.warn('MediaPipe Hands is not loaded - AirPianoController requires it.');
+    return;
   }
+
+  this.handsTop = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+  this.handsTop.setOptions({ 
+    maxNumHands: 2, 
+    modelComplexity: 0,  // REDUCED from 1 (faster processing)
+    minDetectionConfidence: 0.6,  // REDUCED from 0.7
+    minTrackingConfidence: 0.6  // REDUCED from 0.7
+  });
+  this.handsTop.onResults(this.onResultsTop.bind(this));
+
+  this.handsSide = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+  this.handsSide.setOptions({ 
+    maxNumHands: 2, 
+    modelComplexity: 0,  // REDUCED from 1 (faster processing)
+    minDetectionConfidence: 0.6,  // REDUCED from 0.7
+    minTrackingConfidence: 0.6  // REDUCED from 0.7
+  });
+  this.handsSide.onResults(this.onResultsSide.bind(this));
+}
 
   async processFrames() {
     if (this.camerasReady) {
@@ -178,7 +265,7 @@ class DualCameraView {
     this.animationId = requestAnimationFrame(() => this.processFrames());
   }
 
-  // ------------------ Results handlers for port of index.html ------------------
+  // TOP CAMERA: Track finger positions
   onResultsTop(results) {
     if (!results || !results.image) return;
     const width = this.canvasTop.width = results.image.width;
@@ -186,34 +273,29 @@ class DualCameraView {
 
     this.ctxTop.save();
     this.ctxTop.clearRect(0,0,width,height);
-    // mirror top for natural feeling
     this.ctxTop.scale(-1,1);
     this.ctxTop.translate(-width,0);
     this.ctxTop.drawImage(results.image, 0, 0, width, height);
     this.ctxTop.restore();
-
-    if (!this.drawingComplete && this.calibrationComplete && !this.isDrawing) {
-      // nothing here in PIP version
-    }
 
     if (this.drawingComplete && this.keyboardArea) {
       this.drawPianoKeys();
     }
 
     if (results.multiHandLandmarks && this.drawingComplete) {
-      // update fingertip positions
       results.multiHandLandmarks.forEach((landmarks, handIndex) => {
+        this.drawHandLandmarks(landmarks, width, height, this.ctxTop, '#22c55e');
         const fingerTips = [4,8,12,16,20];
         fingerTips.forEach((tipIndex, fingerNum)=>{
           const lm = landmarks[tipIndex];
           const fingerId = `hand${handIndex}_finger${fingerNum}`;
-          // normalized x: 0..1 (mirror adjusted)
           this.detector.updatePosition(fingerId, 1 - lm.x, lm.y);
         });
       });
     }
   }
 
+  // SIDE CAMERA: Detect press and trigger 3D piano
   onResultsSide(results) {
     if (!results || !results.image) return;
     const width = this.canvasSide.width = results.image.width;
@@ -223,110 +305,177 @@ class DualCameraView {
     this.ctxSide.clearRect(0,0,width,height);
     this.ctxSide.drawImage(results.image, 0, 0, width, height);
 
-    // calibration live count could be shown, skipped here
-
+    // Calibration capture
     if (this.captureBaselineNow && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-      let totalY = 0; let count=0;
+      let totalY = 0; 
+      let count=0;
       results.multiHandLandmarks.forEach((landmarks, handIndex)=>{
         const fingerTips = [4,8,12,16,20];
         fingerTips.forEach((tipIndex, fingerNum)=>{
           const fingerId = `hand${handIndex}_finger${fingerNum}`;
           const yValue = landmarks[tipIndex].y;
           this.detector.setDeskSurfaceY(fingerId, yValue);
-          totalY += yValue; count++;
+          totalY += yValue; 
+          count++;
         });
       });
       this.captureBaselineNow = false;
       const avgY = totalY / count;
       this.calibrationComplete = true;
-      this.deskYDisplay.innerText = `Desk Y: ${avgY.toFixed(3)}`;
-      this.onCalibrated(avgY);
+      this.deskYDisplay.innerText = `Desk: ${avgY.toFixed(3)}`;
+      this.statusDisplay.innerText = '✅ Calibrated! Now draw your keyboard area.';
     }
 
+    // Draw desk surface line
     const avgDeskY = this.detector.getAverageDeskY();
     if (avgDeskY !== null) {
-      this.ctxSide.strokeStyle = '#00ff00'; this.ctxSide.lineWidth = 3; this.ctxSide.setLineDash([10,5]);
+      this.ctxSide.strokeStyle = '#22c55e'; 
+      this.ctxSide.lineWidth = 3; 
+      this.ctxSide.setLineDash([10,5]);
       const lineY = avgDeskY * height;
-      this.ctxSide.beginPath(); this.ctxSide.moveTo(0,lineY); this.ctxSide.lineTo(width,lineY); this.ctxSide.stroke(); this.ctxSide.setLineDash([]);
-      this.ctxSide.fillStyle = '#00ff00'; this.ctxSide.font = 'bold 16px Arial'; this.ctxSide.fillText('DESK SURFACE', 10, Math.max(16, lineY-6));
+      this.ctxSide.beginPath(); 
+      this.ctxSide.moveTo(0,lineY); 
+      this.ctxSide.lineTo(width,lineY); 
+      this.ctxSide.stroke(); 
+      this.ctxSide.setLineDash([]);
+      this.ctxSide.fillStyle = '#22c55e'; 
+      this.ctxSide.font = 'bold 14px Arial'; 
+      this.ctxSide.fillText('DESK SURFACE', 10, Math.max(16, lineY-6));
     }
 
-    // Press detection and note playing
+    // Press detection and 3D piano triggering
     if (results.multiHandLandmarks && this.drawingComplete && this.keyboardArea) {
       const timestamp = performance.now();
+      const currentlyPressed = new Set();
+
       results.multiHandLandmarks.forEach((landmarks, handIndex)=>{
+        this.drawHandLandmarks(landmarks, width, height, this.ctxSide, '#a855f7');
         const fingerTips = [4,8,12,16,20];
         fingerTips.forEach((tipIndex, fingerNum)=>{
           const lm = landmarks[tipIndex];
           const fingerId = `hand${handIndex}_finger${fingerNum}`;
           const pressResult = this.detector.checkPress(fingerId, lm.y, timestamp);
+          
           if (pressResult) {
             const normalizedX = pressResult.x;
             const keyboardStartX = this.keyboardArea.x / this.canvasTop.width;
             const keyboardEndX = (this.keyboardArea.x + this.keyboardArea.width) / this.canvasTop.width;
+            
             if (normalizedX >= keyboardStartX && normalizedX <= keyboardEndX) {
               const relativeX = (normalizedX - keyboardStartX) / (keyboardEndX - keyboardStartX);
-              const keyIndex = Math.floor(relativeX * PIANO_KEYS.length);
-              if (keyIndex >=0 && keyIndex < PIANO_KEYS.length) {
-                const key = PIANO_KEYS[keyIndex];
-                this.synth.playNote(key.freq, keyIndex);
-                this.keyPressAnimations.set(keyIndex, timestamp);
-                setTimeout(()=>this.keyPressAnimations.delete(keyIndex), 150);
+              const keyIndex = Math.floor(relativeX * this.numKeys);
+              
+              if (keyIndex >= 0 && keyIndex < this.numKeys) {
+                const midiNoteNumber = this.octaveStart + keyIndex;
+                currentlyPressed.add(midiNoteNumber);
+
+                // Trigger 3D piano note ON if not already active
+                if (!this.activeNotes.has(midiNoteNumber)) {
+                  this.activeNotes.set(midiNoteNumber, fingerId);
+                  this.onNotePress(midiNoteNumber, 100); // velocity = 100
+                  this.keyPressAnimations.set(keyIndex, timestamp);
+                  console.log(`🎹 AIR PIANO: Note ${midiNoteNumber} ON`);
+                }
               }
             }
           }
         });
+      });
+
+      // Release notes that are no longer pressed
+      this.activeNotes.forEach((fingerId, noteNumber) => {
+        if (!currentlyPressed.has(noteNumber)) {
+          this.onNoteRelease(noteNumber);
+          this.activeNotes.delete(noteNumber);
+          console.log(`🎹 AIR PIANO: Note ${noteNumber} OFF`);
+        }
+      });
+
+      // Clear old animations
+      this.keyPressAnimations.forEach((time, keyIndex) => {
+        if (timestamp - time > 150) this.keyPressAnimations.delete(keyIndex);
       });
     }
 
     this.ctxSide.restore();
   }
 
-  // ------------------ UI: calibration & drawing ------------------
+  // Calibration
   startCalibration() {
-    // simple countdown and set capture flag
+    if (!this.camerasReady) {
+      alert('Cameras not ready yet!');
+      return;
+    }
     let countdown = 4;
-    const overlay = document.createElement('div'); overlay.style.cssText = 'position:absolute; left:10px; top:10px; padding:8px 12px; background:rgba(0,0,0,0.7); color:#fef3c7; border-radius:6px; z-index:5000; font-weight:700;';
-    overlay.innerText = `Calibration: ${countdown}`;
+    const overlay = document.createElement('div'); 
+    overlay.style.cssText = 'position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); padding:20px 30px; background:rgba(0,0,0,0.9); color:#fef3c7; border-radius:10px; z-index:5000; font-weight:700; font-size:24px; border:2px solid #fbbf24;';
+    overlay.innerText = `Place hands flat on desk: ${countdown}`;
     this.container.appendChild(overlay);
     const iv = setInterval(()=>{
-      countdown--; overlay.innerText = `Calibration: ${countdown}`;
-      if (countdown<=0) { clearInterval(iv); overlay.innerText = 'Capturing...'; this.captureBaselineNow = true; setTimeout(()=>{ overlay.remove(); }, 1200); }
+      countdown--; 
+      overlay.innerText = `Place hands flat on desk: ${countdown}`;
+      if (countdown<=0) { 
+        clearInterval(iv); 
+        overlay.innerText = 'Capturing...'; 
+        this.captureBaselineNow = true; 
+        setTimeout(()=>{ overlay.remove(); }, 1200); 
+      }
     },1000);
   }
 
   calibrate() { this.startCalibration(); }
 
+  // Draw keyboard area
   openDrawModal() {
-    // show drawCanvas overlay, wire mouse events on it for user to select keyboard area
+    if (!this.calibrationComplete) {
+      alert('Please calibrate desk position first!');
+      return;
+    }
+    
+    this.statusDisplay.innerText = '✏️ Draw your keyboard area on the TOP camera...';
     this.drawCanvas.style.display = 'block';
-    // size drawCanvas to top canvas
     const rect = this.canvasTop.getBoundingClientRect();
-    this.drawCanvas.width = this.canvasTop.width; this.drawCanvas.height = this.canvasTop.height;
-    this.drawCanvas.style.left = (rect.left) + 'px';
-    this.drawCanvas.style.top = (rect.top + 40) + 'px';
-    this.drawCanvas.style.width = rect.width + 'px';
-    this.drawCanvas.style.height = rect.height + 'px';
+    this.drawCanvas.width = this.canvasTop.width; 
+    this.drawCanvas.height = this.canvasTop.height;
 
     const onMouseDown = (e) => {
       this.isDrawing = true;
       const r = this.drawCanvas.getBoundingClientRect();
-      const scaleX = this.drawCanvas.width / r.width; const scaleY = this.drawCanvas.height / r.height;
+      const scaleX = this.drawCanvas.width / r.width; 
+      const scaleY = this.drawCanvas.height / r.height;
       this.drawStart = { x: (e.clientX - r.left)*scaleX, y: (e.clientY - r.top)*scaleY };
     };
+    
     const onMouseMove = (e) => {
       if (!this.isDrawing) return;
-      const r = this.drawCanvas.getBoundingClientRect(); const scaleX = this.drawCanvas.width / r.width; const scaleY = this.drawCanvas.height / r.height;
-      const currentX = (e.clientX - r.left)*scaleX; const currentY = (e.clientY - r.top)*scaleY;
-      this.drawCtx.drawImage(this.videoTop, 0, 0, this.drawCanvas.width, this.drawCanvas.height);
-      this.drawCtx.strokeStyle = '#3b82f6'; this.drawCtx.lineWidth = 4; this.drawCtx.strokeRect(this.drawStart.x, this.drawStart.y, currentX - this.drawStart.x, currentY - this.drawStart.y);
+      const r = this.drawCanvas.getBoundingClientRect(); 
+      const scaleX = this.drawCanvas.width / r.width; 
+      const scaleY = this.drawCanvas.height / r.height;
+      const currentX = (e.clientX - r.left)*scaleX; 
+      const currentY = (e.clientY - r.top)*scaleY;
+      this.drawCtx.clearRect(0, 0, this.drawCanvas.width, this.drawCanvas.height);
+      this.drawCtx.strokeStyle = '#3b82f6'; 
+      this.drawCtx.lineWidth = 4; 
+      this.drawCtx.strokeRect(this.drawStart.x, this.drawStart.y, currentX - this.drawStart.x, currentY - this.drawStart.y);
     };
+    
     const onMouseUp = (e) => {
-      if (!this.isDrawing) return; this.isDrawing=false;
-      const r = this.drawCanvas.getBoundingClientRect(); const scaleX = this.drawCanvas.width / r.width; const scaleY = this.drawCanvas.height / r.height;
-      const endX = (e.clientX - r.left)*scaleX; const endY = (e.clientY - r.top)*scaleY;
-      this.keyboardArea = { x: Math.min(this.drawStart.x,endX), y: Math.min(this.drawStart.y,endY), width: Math.abs(endX - this.drawStart.x), height: Math.abs(endY - this.drawStart.y) };
-      this.drawCanvas.style.display = 'none'; this.drawingComplete = true;
+      if (!this.isDrawing) return; 
+      this.isDrawing=false;
+      const r = this.drawCanvas.getBoundingClientRect(); 
+      const scaleX = this.drawCanvas.width / r.width; 
+      const scaleY = this.drawCanvas.height / r.height;
+      const endX = (e.clientX - r.left)*scaleX; 
+      const endY = (e.clientY - r.top)*scaleY;
+      this.keyboardArea = { 
+        x: Math.min(this.drawStart.x,endX), 
+        y: Math.min(this.drawStart.y,endY), 
+        width: Math.abs(endX - this.drawStart.x), 
+        height: Math.abs(endY - this.drawStart.y) 
+      };
+      this.drawCanvas.style.display = 'none'; 
+      this.drawingComplete = true;
+      this.statusDisplay.innerText = '🎹 Ready to play! Touch the desk to trigger notes.';
     };
 
     this.drawCanvas.addEventListener('mousedown', onMouseDown);
@@ -334,38 +483,261 @@ class DualCameraView {
     this.drawCanvas.addEventListener('mouseup', onMouseUp);
   }
 
+  // Draw piano key overlay
   drawPianoKeys() {
     if (!this.keyboardArea) return;
-    const keyWidth = this.keyboardArea.width / PIANO_KEYS.length;
-    for (let i=0;i<PIANO_KEYS.length;i++){
-      const x = this.keyboardArea.x + (i*keyWidth); const y = this.keyboardArea.y;
+    const keyWidth = this.keyboardArea.width / this.numKeys;
+    
+    for (let i=0; i<this.numKeys; i++){
+      const x = this.keyboardArea.x + (i*keyWidth); 
+      const y = this.keyboardArea.y;
       const isPressed = this.keyPressAnimations.has(i);
-      this.ctxTop.fillStyle = isPressed ? '#3b82f6' : 'rgba(255,255,255,0.25)';
+      
+      this.ctxTop.fillStyle = isPressed ? '#3b82f6' : 'rgba(255,255,255,0.2)';
       this.ctxTop.fillRect(x,y,keyWidth-2,this.keyboardArea.height);
-      this.ctxTop.strokeStyle = isPressed ? '#60a5fa':'rgba(255,255,255,0.6)'; this.ctxTop.lineWidth = 3; this.ctxTop.strokeRect(x,y,keyWidth-2,this.keyboardArea.height);
-      this.ctxTop.fillStyle = '#fff'; this.ctxTop.font = 'bold 18px Arial'; this.ctxTop.textAlign = 'center'; this.ctxTop.fillText(PIANO_KEYS[i].label, x+keyWidth/2, y + this.keyboardArea.height/2 + 6);
+      this.ctxTop.strokeStyle = isPressed ? '#60a5fa':'rgba(255,255,255,0.5)'; 
+      this.ctxTop.lineWidth = 2; 
+      this.ctxTop.strokeRect(x,y,keyWidth-2,this.keyboardArea.height);
+      
+      // Draw note labels
+      const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+      this.ctxTop.fillStyle = '#fff'; 
+      this.ctxTop.font = 'bold 14px Arial'; 
+      this.ctxTop.textAlign = 'center'; 
+      this.ctxTop.fillText(noteNames[i], x+keyWidth/2, y + this.keyboardArea.height/2 + 5);
     }
   }
 
-  // ------------------ Cleanup ------------------
+  // Draw hand landmarks
+  drawHandLandmarks(landmarks, width, height, ctx, color = '#22c55e') {
+    const connections = [
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [5,9],[9,10],[10,11],[11,12],
+      [9,13],[13,14],[14,15],[15,16],
+      [13,17],[17,18],[18,19],[19,20],
+      [0,17]
+    ];
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+
+    connections.forEach(([start, end]) => {
+      const s = landmarks[start];
+      const e = landmarks[end];
+      ctx.beginPath();
+      ctx.moveTo(s.x * width, s.y * height);
+      ctx.lineTo(e.x * width, e.y * height);
+      ctx.stroke();
+    });
+
+    landmarks.forEach((lm, i) => {
+      const x = lm.x * width;
+      const y = lm.y * height;
+      const isTip = [4, 8, 12, 16, 20].includes(i);
+      
+      ctx.beginPath();
+      ctx.arc(x, y, isTip ? 7 : 4, 0, 2 * Math.PI);
+      ctx.fillStyle = isTip ? '#ef4444' : color;
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+  }
+
   dispose() { this.stop(); }
 }
 
-// ------------------ Helper classes & constants ------------------
-class PianoSynth {
-  constructor(){ this.audioContext = new (window.AudioContext||window.webkitAudioContext)(); this.activeNotes=new Map(); }
-  playNote(frequency, keyIndex){ if(this.activeNotes.has(keyIndex)) return; const now = this.audioContext.currentTime; const duration = 1.8; this.createOscillator(frequency,0.5,now,duration); this.createOscillator(frequency*2,0.25,now,duration); this.activeNotes.set(keyIndex,true); setTimeout(()=>this.activeNotes.delete(keyIndex),duration*1000); }
-  createOscillator(freq,volume,startTime,duration){ const osc=this.audioContext.createOscillator(); const gain=this.audioContext.createGain(); osc.connect(gain); gain.connect(this.audioContext.destination); osc.frequency.value = freq; osc.type='triangle'; gain.gain.setValueAtTime(0,startTime); gain.gain.linearRampToValueAtTime(volume,startTime+0.01); gain.gain.exponentialRampToValueAtTime(volume*0.001,startTime+duration); osc.start(startTime); osc.stop(startTime+duration); }
-}
-
-const PIANO_KEYS = [ {note:'C4',freq:261.63,label:'C'}, {note:'D4',freq:293.66,label:'D'}, {note:'E4',freq:329.63,label:'E'}, {note:'F4',freq:349.23,label:'F'}, {note:'G4',freq:392.00,label:'G'}, {note:'A4',freq:440.00,label:'A'}, {note:'B4',freq:493.88,label:'B'}, {note:'C5',freq:523.25,label:'C5'} ];
-
-class DualCameraPressDetector {
-  constructor(){ this.deskSurfaceY = new Map(); this.fingerPositions = new Map(); this.pressThreshold=0.03; this.cooldownTime=200; this.lastPressTime = new Map(); }
+// Press detector class
+class AirPianoPressDetector {
+  constructor(){ 
+    this.deskSurfaceY = new Map(); 
+    this.fingerPositions = new Map(); 
+    this.pressThreshold = 0.040;  // INCREASED from 0.035 (less sensitive)
+    this.cooldownTime = 100;  // REDUCED from 150ms (faster repeat)
+    this.lastPressTime = new Map();
+    this.isPressed = new Map();
+  }
+  // ... rest of the class stays the same
+  
   setDeskSurfaceY(fingerId,y){ this.deskSurfaceY.set(fingerId,y); }
-  getAverageDeskY(){ if(this.deskSurfaceY.size===0) return null; const vals=Array.from(this.deskSurfaceY.values()); return vals.reduce((a,b)=>a+b,0)/vals.length; }
-  updatePosition(fingerId,x,y){ this.fingerPositions.set(fingerId,{x,y,timestamp:performance.now()}); }
-  checkPress(fingerId,currentY,timestamp){ if(!this.deskSurfaceY.has(fingerId)) return null; const deskY=this.deskSurfaceY.get(fingerId); const distanceFromDesk = currentY - deskY; const last = this.lastPressTime.get(fingerId)||0; if((timestamp-last) < this.cooldownTime) return null; const isTouchingDesk = distanceFromDesk >= -this.pressThreshold; if(isTouchingDesk){ this.lastPressTime.set(fingerId,timestamp); const pos = this.fingerPositions.get(fingerId); if(pos && (timestamp - pos.timestamp) < 150){ return {pressed:true, x:pos.x, y:pos.y, fingerId, sideY:currentY, deskY}; } return null; } return null; }
+  
+  getAverageDeskY(){ 
+    if(this.deskSurfaceY.size===0) return null; 
+    const vals=Array.from(this.deskSurfaceY.values()); 
+    return vals.reduce((a,b)=>a+b,0)/vals.length; 
+  }
+  
+  updatePosition(fingerId,x,y){ 
+    this.fingerPositions.set(fingerId,{x,y,timestamp:performance.now()}); 
+  }
+  
+  checkPress(fingerId,currentY,timestamp){ 
+    if(!this.deskSurfaceY.has(fingerId)) return null; 
+    const deskY=this.deskSurfaceY.get(fingerId); 
+    const distanceFromDesk = currentY - deskY; 
+    const last = this.lastPressTime.get(fingerId)||0; 
+    const timeSinceLastPress = timestamp - last;
+    
+    const isTouchingDesk = distanceFromDesk >= -this.pressThreshold;
+    const wasPressed = this.isPressed.get(fingerId) || false;
+    
+    // Only trigger on new press (not already pressed) and cooldown passed
+    if(isTouchingDesk && !wasPressed && timeSinceLastPress > this.cooldownTime){ 
+      this.lastPressTime.set(fingerId,timestamp); 
+      this.isPressed.set(fingerId, true);
+      const pos = this.fingerPositions.get(fingerId); 
+      if(pos && (timestamp - pos.timestamp) < 150){ 
+        return {pressed:true, x:pos.x, y:pos.y, fingerId, sideY:currentY, deskY}; 
+      } 
+      return null; 
+    }
+    
+    // Update press state
+    if (!isTouchingDesk) {
+      this.isPressed.set(fingerId, false);
+    }
+    
+    return null; 
+  }
 }
 
-export { DualCameraView };
+// Export for use in main.js
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { AirPianoController };
+} else if (typeof window !== 'undefined') {
+  window.AirPianoController = AirPianoController;
+}
+
+// At the END of your current dualCameraView.js file, add the OLD DualCameraView class
+// and update the exports:
+
+// Keep your AirPianoController class as is...
+
+// Add back the original DualCameraView class (simplified version for backwards compatibility)
+// REPLACE the DualCameraView class at the end of the file with this:
+
+// REPLACE the DualCameraView class at the end of dualCameraView.js with this optimized version:
+
+class DualCameraView {
+  constructor(options = {}) {
+    // Transform old DualCameraView into new AirPianoController with 3D piano integration
+    this.airPiano = new AirPianoController({
+      ...options,
+      onNotePress: (midiNoteNumber, velocity) => {
+        console.log('🎹 DualCameraView: Note ON', midiNoteNumber, velocity);
+        
+        try {
+          const pianoKey = midiNoteNumber - 21;
+          
+          if (pianoKey >= 0 && pianoKey < 88) {
+            // Play the note through MIDI (with error handling)
+            if (typeof MIDI !== 'undefined' && MIDI.noteOn) {
+              try {
+                MIDI.noteOn(0, midiNoteNumber, velocity, 0);
+                console.log('✅ MIDI noteOn called:', midiNoteNumber);
+              } catch (e) {
+                console.error('❌ MIDI.noteOn error:', e);
+              }
+            }
+            
+            // Animate the 3D piano key
+            if (typeof window.setKey === 'function') {
+              try {
+                window.setKey(pianoKey, true, 0);
+                console.log('✅ setKey ON called:', pianoKey);
+              } catch (e) {
+                console.error('❌ setKey error:', e);
+              }
+            }
+            
+            // Visual feedback for fingers
+            if (window.notesState && window.settings && window.settings["Animate Fingers"]) {
+              try {
+                window.notesState[0][pianoKey] = true;
+                if (typeof window.animateFingers === 'function') {
+                  window.animateFingers(window.notesState, window.rigHelper, window.mixamorig, 0, true);
+                  console.log('✅ animateFingers called for note:', pianoKey);
+                }
+              } catch (e) {
+                console.error('❌ animateFingers error:', e);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('❌ onNotePress error:', e);
+        }
+        
+        // Call the original callback if provided
+        if (options.onNotePress) {
+          try {
+            options.onNotePress(midiNoteNumber, velocity);
+          } catch (e) {
+            console.error('❌ options.onNotePress error:', e);
+          }
+        }
+      },
+      onNoteRelease: (midiNoteNumber) => {
+        console.log('🎹 DualCameraView: Note OFF', midiNoteNumber);
+        
+        try {
+          const pianoKey = midiNoteNumber - 21;
+          
+          if (pianoKey >= 0 && pianoKey < 88) {
+            // Stop the note
+            if (typeof MIDI !== 'undefined' && MIDI.noteOff) {
+              try {
+                MIDI.noteOff(0, midiNoteNumber, 0);
+                console.log('✅ MIDI noteOff called:', midiNoteNumber);
+              } catch (e) {
+                console.error('❌ MIDI.noteOff error:', e);
+              }
+            }
+            
+            // Animate the 3D piano key release
+            if (typeof window.setKey === 'function') {
+              try {
+                window.setKey(pianoKey, false, 0);
+                console.log('✅ setKey OFF called:', pianoKey);
+              } catch (e) {
+                console.error('❌ setKey OFF error:', e);
+              }
+            }
+            
+            // Visual feedback for fingers
+            if (window.notesState && window.settings && window.settings["Animate Fingers"]) {
+              try {
+                window.notesState[0][pianoKey] = false;
+                if (typeof window.animateFingers === 'function') {
+                  window.animateFingers(window.notesState, window.rigHelper, window.mixamorig, 0, true);
+                }
+              } catch (e) {
+                console.error('❌ animateFingers OFF error:', e);
+              }
+            }
+          }
+        } catch (e) {
+          console.error('❌ onNoteRelease error:', e);
+        }
+        
+        // Call the original callback if provided
+        if (options.onNoteRelease) {
+          try {
+            options.onNoteRelease(midiNoteNumber);
+          } catch (e) {
+            console.error('❌ options.onNoteRelease error:', e);
+          }
+        }
+      }
+    });
+  }
+  
+  start() { return this.airPiano.start(); }
+  stop() { return this.airPiano.stop(); }
+  calibrate() { return this.airPiano.calibrate(); }
+  dispose() { return this.airPiano.dispose(); }
+}
+
+// Export both for compatibility
+export { AirPianoController, DualCameraView };
