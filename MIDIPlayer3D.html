@@ -1,163 +1,172 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
+
 <head>
-    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
-    <meta http-equiv="expires" content="0" />
-    <title>MIDIPlayer - Air Piano Mode</title>
-    <!-- Cache busting & no-cache directives to ensure latest JS loads -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    <!-- midi.js css -->
-    <link href="css/MIDIPlayer.css" rel="stylesheet" type="text/css" />
-    <link href="css/gui-hover.css" rel="stylesheet" type="text/css" />
-    <!-- VexFlow for dynamic sheet music rendering - loaded synchronously before modules -->
-    <script src="https://unpkg.com/vexflow@4.2.3/build/vexflow.min.js"></script>
-	<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
-    <!-- shim -->
-    <script src="inc/shim/Base64.js" type="text/javascript"></script>
-    <script src="inc/shim/Base64binary.js" type="text/javascript"></script>
-    <script src="inc/shim/WebAudioAPI.js" type="text/javascript"></script>
-    <script src="inc/shim/WebMIDIAPI.js" type="text/javascript"></script>
-    <!-- jasmid package -->
-    <script src="inc/jasmid/stream.js"></script>
-    <script src="inc/jasmid/midifile.js"></script>
-    <script src="inc/jasmid/replayer.js"></script>
-    <!-- midi.js package -->
-    <script src="js/midi/audioDetect.js" type="text/javascript"></script>
-    <script src="js/midi/gm.js" type="text/javascript"></script>
-    <script src="js/midi/loader.js" type="text/javascript"></script>
-    <script src="js/midi/plugin.audiotag.js" type="text/javascript"></script>
-    <script src="js/midi/plugin.webaudio.js" type="text/javascript"></script>
-    <script src="js/midi/plugin.webmidi.js" type="text/javascript"></script>
-    <script src="js/midi/player.js" type="text/javascript"></script>
-    <script src="js/midi/synesthesia.js" type="text/javascript"></script>
-    <!-- utils -->
-    <script src="js/util/dom_request_xhr.js" type="text/javascript"></script>
-    <script src="js/util/dom_request_script.js" type="text/javascript"></script>
-    <script src="js/util/jquery.js"></script>
-    <script src="js/util/songs.js"></script>
-    <script src="js/util/pianistPos.js"></script>
-    <!-- includes -->
-    <script src="inc/timer.js" type="text/javascript"></script>
-    <script src="inc/colorspace.js" type="text/javascript"></script>
-    <script src="inc/event.js" type="text/javascript"></script>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+	<meta http-equiv="expires" content="0" />
+	<title>MIDIPlayer - Air Piano Mode</title>
+	<!-- Cache busting & no-cache directives to ensure latest JS loads -->
+	<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+	<meta http-equiv="Pragma" content="no-cache" />
+	<meta http-equiv="Expires" content="0" />
+	<!-- midi.js css -->
+	<link href="css/MIDIPlayer.css" rel="stylesheet" type="text/css" />
+	<link href="css/gui-hover.css" rel="stylesheet" type="text/css" />
+	<!-- shim -->
+	<script src="inc/shim/Base64.js" type="text/javascript"></script>
+	<script src="inc/shim/Base64binary.js" type="text/javascript"></script>
+	<script src="inc/shim/WebAudioAPI.js" type="text/javascript"></script>
+	<script src="inc/shim/WebMIDIAPI.js" type="text/javascript"></script>
+	<!-- jasmid package -->
+	<script src="inc/jasmid/stream.js"></script>
+	<script src="inc/jasmid/midifile.js"></script>
+	<script src="inc/jasmid/replayer.js"></script>
+	<!-- midi.js package -->
+	<script src="js/midi/audioDetect.js" type="text/javascript"></script>
+	<script src="js/midi/gm.js" type="text/javascript"></script>
+	<script src="js/midi/loader.js" type="text/javascript"></script>
+	<script src="js/midi/plugin.audiotag.js" type="text/javascript"></script>
+	<script src="js/midi/plugin.webaudio.js" type="text/javascript"></script>
+	<script src="js/midi/plugin.webmidi.js" type="text/javascript"></script>
+	<script src="js/midi/player.js" type="text/javascript"></script>
+	<script src="js/midi/synesthesia.js" type="text/javascript"></script>
+	<!-- utils -->
+	<script src="js/util/dom_request_xhr.js" type="text/javascript"></script>
+	<script src="js/util/dom_request_script.js" type="text/javascript"></script>
+	<script src="js/util/jquery.js"></script>
+	<script src="js/util/songs.js"></script>
+	<script src="js/util/pianistPos.js"></script>
+	<!-- includes -->
+	<script src="inc/timer.js" type="text/javascript"></script>
+	<script src="inc/colorspace.js" type="text/javascript"></script>
+	<script src="inc/event.js" type="text/javascript"></script>
 </head>
 
 <body id="body">
-    <!-- Preloader -->
-    <div id="preloader">
-        <div id="status">
-            <p class="preloader-p">Loading...</p>
-            <div class="preloader" aria-busy="true" aria-label="Loading, please wait." role="progressbar"></div>
-        </div>
-    </div>
-    <!-- ./Preloader -->
+	<!-- Preloader -->
+	<div id="preloader">
+		<div id="status">
+			<p class="preloader-p">Loading...</p>
+			<div class="preloader" aria-busy="true" aria-label="Loading, please wait." role="progressbar"></div>
+		</div>
+	</div>
+	<!-- ./Preloader -->
 
-    <!-- Main Grid Layout -->
-<!-- Main Grid Layout -->
-<div id="app-grid">
-    <!-- Left Panel: 3D Canvas + Note History Overlay -->
-    <div id="canvas-container">
-        <!-- Note History Overlay (moved here) -->
-        <div id="note-history-overlay">
-            <div id="note-history-list"></div>
-        </div>
-    </div>
-    
-    <!-- Right Sidebar: Cameras ONLY -->
-    <div id="sidebar-container">
-        <div id="camera-stack"></div>
-    </div>
-</div>
+	<!-- Main Grid Layout -->
+	<!-- Main Grid Layout -->
+	<div id="app-grid">
+		<!-- Left Panel: 3D Canvas + Note History Overlay -->
+		<div id="canvas-container">
+			<!-- Note History Overlay (moved here) -->
+			<div id="note-history-overlay">
+				<div id="note-history-list"></div>
+			</div>
+		</div>
 
-    <!-- Overlays (stay outside grid) -->
-    <div id="info">
-        <a href="https://threejs.org" target="_blank" rel="noopener"></a></br>
+		<!-- Right Sidebar: Cameras ONLY -->
+		<div id="sidebar-container">
+			<div id="camera-stack"></div>
+		</div>
+	</div>
 
-        <div id="songname"></div>
-        <div id="pianoLoading"></div>
-    </div>
+	<!-- Overlays (stay outside grid) -->
+	<div id="info">
+		<a href="https://threejs.org" target="_blank" rel="noopener"></a></br>
 
-    <!<div id="bot-div" style="position: fixed;bottom: 0; left:0;width: 100%; z-index: 2000;">
-        <div class="player_bar">
-            <div class="player" style="height: 42px; box-shadow: 0 -1px #000; margin-bottom: 0;">
-                <div class="time-controls" style="float: left; margin: 0; position: relative; top: 5px; display: flex">
-                    <span id="capsule">
-                        <span id="cursor">
-                            <p id="time1" class="time">0:00</p>
-                        </span>
-                        <p id="time2" class="time" style="float:right">-0:00</p>
-                    </span>
-                </div>
-            </div>
-        </div>
-    </div>
+		<div id="songname"></div>
+		<div id="pianoLoading"></div>
+	</div>
 
-    <!-- Sheet Music Display -->
-    <!--<div id="sheet-music-container" style="position: fixed; top: 80px; left: 10px; width: 400px; height: 300px; background: rgba(255,255,255,0.95); z-index: 1000; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow: auto;"></div>
+	<!<div id="bot-div" style="position: fixed;bottom: 0; left:0;width: 100%; z-index: 2000;">
+		<div class="player_bar">
+			<div class="player" style="height: 42px; box-shadow: 0 -1px #000; margin-bottom: 0;">
+				<div class="time-controls" style="float: left; margin: 0; position: relative; top: 5px; display: flex">
+					<span id="capsule">
+						<span id="cursor">
+							<p id="time1" class="time">0:00</p>
+						</span>
+						<p id="time2" class="time" style="float:right">-0:00</p>
+					</span>
+				</div>
+			</div>
+		</div>
+		</div>
+
+		<!-- Sheet Music Display -->
+		<!--<div id="sheet-music-container" style="position: fixed; top: 80px; left: 10px; width: 400px; height: 300px; background: rgba(255,255,255,0.95); z-index: 1000; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow: auto;"></div>
 -->
-    <!-- All your existing scripts stay the same -->
-    <script src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.4/build/opensheetmusicdisplay.min.js"></script>
-    <script>
-        var static_url = "./";
-    </script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
-    
-    <!-- Append a version query param so browser doesn't cache stale module builds -->
-    <script type="module" src="js/main.js?v=20251109"></script>
-    <script>
-        let osmd = null;
-        async function showSheetMusic(midiFileName) {
-            console.log('Showing sheet music for:', midiFileName);
-            const container = document.getElementById('sheet-music-container');
-            
-            if (!osmd) {
-                osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(container, {
-                    drawingParameters: 'compact',
-                    autoResize: true,
-                    drawTitle: true
-                });
-            }
+		<!-- All existing scripts stay the same -->
+		<script
+			src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.4/build/opensheetmusicdisplay.min.js"></script>
+		<script>
+			var static_url = "./";
+		</script>
 
-            try {
-                if (window.settings && !window.settings['Show sheet music']) {
-                    container.style.display = 'none';
-                    return;
-                }
-                
-                container.style.display = 'block';
-                const searchRes = await fetch(`/api/flat/search?q=${encodeURIComponent(midiFileName)}`);
-                if (!searchRes.ok) throw new Error('Flat.io search failed');
-                const searchData = await searchRes.json();
-                if (!searchData || !searchData.length) throw new Error('No sheet music found on Flat.io');
-                
-                const scoreId = searchData[0].id;
-                console.log('Found score ID:', scoreId);
-                const xmlRes = await fetch(`/api/flat/musicxml?id=${encodeURIComponent(scoreId)}`);
-                if (!xmlRes.ok) throw new Error('Failed to fetch MusicXML from Flat.io');
-                const musicXML = await xmlRes.text();
-                
-                await osmd.load(musicXML);
-                osmd.render();
-            } catch (e) {
-                container.innerHTML = '<div style="color:red;padding:1em;">Sheet music unavailable.<br>' + e.message + '</div>';
-            }
-        }
-        function hideSheetMusic() {
-            const container = document.getElementById('sheet-music-container');
-            container.style.display = 'none';
-            if (osmd) osmd.clear();
-        }
-    </script>
+		<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
+			crossorigin="anonymous"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+			crossorigin="anonymous"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+			crossorigin="anonymous"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+		<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/handpose"></script>
+
+		<!-- Append a version query param so browser doesn't cache stale module builds -->
+		<script type="module" src="js/main.js?v=20251109"></script>
+		<script>
+			let osmd = null;
+			async function showSheetMusic(midiFileName) {
+				console.log('Showing sheet music for:', midiFileName);
+				const container = document.getElementById('sheet-music-container');
+
+				// null check
+				if (!container) {
+					console.warn('Sheet music container not found in DOM');
+					return;
+				}
+
+				if (!osmd) {
+					osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(container, {
+						drawingParameters: 'compact',
+						autoResize: true,
+						drawTitle: true
+					});
+				}
+
+				try {
+					if (window.settings && !window.settings['Show sheet music']) {
+						container.style.display = 'none';
+						return;
+					}
+
+					container.style.display = 'block';
+					const searchRes = await fetch(`/api/flat/search?q=${encodeURIComponent(midiFileName)}`);
+					if (!searchRes.ok) throw new Error('Flat.io search failed');
+					const searchData = await searchRes.json();
+					if (!searchData || !searchData.length) throw new Error('No sheet music found on Flat.io');
+
+					const scoreId = searchData[0].id;
+					console.log('Found score ID:', scoreId);
+					const xmlRes = await fetch(`/api/flat/musicxml?id=${encodeURIComponent(scoreId)}`);
+					if (!xmlRes.ok) throw new Error('Failed to fetch MusicXML from Flat.io');
+					const musicXML = await xmlRes.text();
+
+					await osmd.load(musicXML);
+					osmd.render();
+				} catch (e) {
+					container.innerHTML = '<div style="color:red;padding:1em;">Sheet music unavailable.<br>' + e.message + '</div>';
+				}
+			}
+			function hideSheetMusic() {
+				const container = document.getElementById('sheet-music-container');
+				container.style.display = 'none';
+				if (osmd) osmd.clear();
+			}
+		</script>
 </body>
+
 </html>

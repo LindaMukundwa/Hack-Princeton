@@ -83,11 +83,12 @@ function init() {
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 30000);
-    camera.position.set(-30, 100, 100);
+    camera.position.set(-70, 100, 100); // Shifted left (x: 10 → -70) to move scene right
 
     // controls
 
     controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(-70, 0, 0); // Set target to match shifted center
 
     //controls.addEventListener( 'change', render ); // call this only in static scenes (i.e., if there is no animation loop)
 
@@ -328,100 +329,26 @@ function openPiano(init = false) {
 }
 
 // Note History Functions
-// ============================================
-// VEXFLOW SHEET MUSIC INTEGRATION
-// ============================================
-class SheetMusicRenderer {
-    constructor() {
-        this.notes = [];
-        this.maxNotes = 10;
-        this.container = null;
-        this.canvas = null;
-        this.renderer = null;
-        this.context = null;
-        this.currentClef = 'treble';
-        this.initialized = false;
-        this.init();
-    }
-    init() {
-        const overlay = document.getElementById('note-history-overlay');
-        if (!overlay) { console.error('SheetMusicRenderer: overlay not found'); return; }
-        this.container = document.createElement('div');
-        this.container.id = 'sheet-music-canvas-container';
-        this.container.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:200px;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);border-bottom:2px solid rgba(34,197,94,0.6);z-index:10;overflow:hidden;';
-        this.canvas = document.createElement('canvas');
-        this.canvas.width = 280; this.canvas.height = 200; this.canvas.style.cssText = 'width:100%;height:100%;';
-        this.container.appendChild(this.canvas);
-        overlay.insertBefore(this.container, overlay.firstChild);
-        const noteList = document.getElementById('note-history-list');
-        if (noteList) noteList.style.paddingTop = '220px';
-        if (typeof Vex === 'undefined') { console.error('VexFlow not loaded'); return; }
-        this.renderer = new Vex.Flow.Renderer(this.canvas, Vex.Flow.Renderer.Backends.CANVAS);
-        this.context = this.renderer.getContext();
-        this.initialized = true;
-        this.render();
-    }
-    midiToVexNote(midi) {
-        const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-        const octave = Math.floor((midi - 12) / 12); const name = names[midi % 12];
-        return { note: name, octave, vex: `${name}/${octave}` };
-    }
-    determineClef(midi) { return midi >= 60 ? 'treble' : 'bass'; }
-    addNote(midi, velocity=100) {
-        if (!this.initialized) return;
-        const info = this.midiToVexNote(midi); const clef = this.determineClef(midi);
-        this.notes.push({ midi, info, clef, velocity, recent: true });
-        for (let i=0;i<this.notes.length-1;i++) this.notes[i].recent=false;
-        if (this.notes.length > this.maxNotes) this.notes.shift();
-        this.currentClef = clef; this.render();
-    }
-    render() {
-        if (!this.context) return; this.context.clearRect(0,0,this.canvas.width,this.canvas.height);
-        const VF = Vex.Flow; const stave = new VF.Stave(10,40,260); stave.addClef(this.currentClef); stave.setContext(this.context).draw();
-        if (this.notes.length === 0) { this.renderEmpty(); return; }
-        try {
-            const vexNotes=[]; for (const n of this.notes){
-                let keys=[n.info.vex]; let acc=null; if(n.info.note.includes('#')){ keys=[n.info.note.replace('#','')+'/'+n.info.octave]; acc='#'; }
-                const sn=new VF.StaveNote({ clef:this.currentClef, keys, duration:'q' }); if(acc) sn.addModifier(new VF.Accidental(acc),0);
-                if(n.recent) sn.setStyle({ fillStyle:'#22c55e', strokeStyle:'#22c55e'}); vexNotes.push(sn);
-            }
-            const voice=new VF.Voice({ num_beats: this.notes.length, beat_value:4 }); voice.addTickables(vexNotes);
-            new VF.Formatter().joinVoices([voice]).format([voice],220); voice.draw(this.context,stave);
-        } catch(e){ console.error('VexFlow render error',e); this.context.fillStyle='#ef4444'; this.context.font='12px Candara'; this.context.fillText('Sheet music error',20,100); }
-    }
-    renderEmpty(){ const VF=Vex.Flow; const s=new VF.Stave(10,40,260); s.addClef('treble'); s.setContext(this.context).draw(); this.context.fillStyle='#94a3b8'; this.context.font='12px Candara'; this.context.fillText('Play notes to see sheet music...',20,160); }
-    clear(){ this.notes=[]; this.render(); }
-}
-let sheetMusicRenderer = null;
-function initSheetMusic(){
-    const start = Date.now();
-    const tryInit = () => {
-        if (typeof Vex !== 'undefined' && Vex.Flow) {
-            sheetMusicRenderer = new SheetMusicRenderer();
-            window.sheetMusicRenderer = sheetMusicRenderer;
-            console.log('✅ Sheet music renderer initialized');
-            return;
-        }
-        if (Date.now() - start < 5000) {
-            setTimeout(tryInit, 100);
-        } else {
-            console.warn('⚠️ VexFlow not available after 5s timeout');
-        }
-    };
-    tryInit();
-}
-
 function logNoteToHistory(midiNoteNumber, velocity) {
     const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
     const octave = Math.floor((midiNoteNumber - 12) / 12);
     const noteName = noteNames[midiNoteNumber % 12] + octave;
+    
     const timestamp = new Date().toLocaleTimeString();
-    const noteItem = { name: noteName, midi: midiNoteNumber, velocity, time: timestamp };
-    noteHistory.unshift(noteItem); if (noteHistory.length > MAX_HISTORY) noteHistory.pop();
+    
+    const noteItem = {
+        name: noteName,
+        midi: midiNoteNumber,
+        velocity: velocity,
+        time: timestamp
+    };
+    
+    noteHistory.unshift(noteItem);
+    if (noteHistory.length > MAX_HISTORY) noteHistory.pop();
+    
     updateNoteHistoryDOM();
-    if (sheetMusicRenderer) sheetMusicRenderer.addNote(midiNoteNumber, velocity);
+    updateLiveStaff();
 }
-window.initSheetMusic = initSheetMusic;
 
 // In main.js - Update the updateNoteHistoryDOM function around line 316:
 function updateNoteHistoryDOM() {
@@ -453,6 +380,269 @@ function updateNoteHistoryDOM() {
         listEl.scrollTop = 0;
     }
 }
+
+// ============================================
+// OSMD LIVE SHEET MUSIC INTEGRATION
+// ============================================
+let liveOsmd = null;
+let liveStaffContainer = null;
+let updateStaffTimeout = null;
+let activeNoteIndices = new Set(); // Track which notes are on the staff
+
+function initLiveStaff() {
+    const overlay = document.getElementById('note-history-overlay');
+    if (!overlay) {
+        console.warn('Note history overlay not found for live staff');
+        return;
+    }
+    
+    liveStaffContainer = document.createElement('div');
+    liveStaffContainer.id = 'live-staff-container';
+    liveStaffContainer.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 240px;
+        background: rgba(255, 255, 255, 0.75);
+        border-bottom: 2px solid rgba(34, 197, 94, 0.6);
+        border-radius: 0 0 12px 12px;
+        z-index: 10;
+        overflow: hidden;
+        padding: 4px 8px;
+        box-sizing: border-box;
+    `;
+    
+    overlay.insertBefore(liveStaffContainer, overlay.firstChild);
+    
+    // Adjust note list padding to account for staff
+    const noteList = document.getElementById('note-history-list');
+    if (noteList) {
+        noteList.style.paddingTop = '260px';
+    }
+    
+    if (typeof opensheetmusicdisplay === 'undefined') {
+        console.error('OSMD not loaded');
+        liveStaffContainer.innerHTML = '<div style="color:#dc2626;padding:1em;font-weight:600;">Sheet music library not loaded</div>';
+        return;
+    }
+    
+    try {
+        liveOsmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(liveStaffContainer, {
+            drawingParameters: 'default', // Use 'default' instead of 'compact' for more space
+            autoResize: true,
+            drawTitle: false
+        });
+        console.log('✅ OSMD live staff initialized');
+        renderEmptyStaff();
+    } catch (e) {
+        console.error('Failed to init OSMD:', e);
+        liveStaffContainer.innerHTML = '<div style="color:#dc2626;padding:1em;font-weight:600;">Failed to initialize sheet music</div>';
+    }
+}
+
+function midiToPitch(midi) {
+    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const octave = Math.floor((midi / 12) - 1);
+    const step = names[midi % 12];
+    const alter = step.includes('#') ? 1 : 0;
+    return { step: step.replace('#', ''), alter, octave };
+}
+
+function buildLiveMusicXML(notes) {
+    const slice = notes.slice(0, 10).reverse();
+    
+    // Build grand staff with two parts (treble and bass)
+    const header = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Treble</part-name>
+    </score-part>
+    <score-part id="P2">
+      <part-name>Bass</part-name>
+    </score-part>
+  </part-list>`;
+
+    const footer = `</score-partwise>`;
+
+    // Separate notes into treble (MIDI >= 60) and bass (MIDI < 60)
+    const trebleNotes = slice.filter(n => n.midi >= 60);
+    const bassNotes = slice.filter(n => n.midi < 60);
+
+    // Build treble part
+    let treblePart = `
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef>
+          <sign>G</sign>
+          <line>2</line>
+        </clef>
+      </attributes>`;
+
+    if (trebleNotes.length === 0) {
+        treblePart += `
+      <note><rest/><duration>4</duration><voice>1</voice><type>whole</type></note>`;
+    } else {
+        trebleNotes.forEach(n => {
+            const { step, alter, octave } = midiToPitch(n.midi);
+            treblePart += `
+      <note>
+        <pitch>
+          <step>${step}</step>
+          ${alter ? `<alter>${alter}</alter>` : ''}
+          <octave>${octave}</octave>
+        </pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        ${alter ? '<accidental>sharp</accidental>' : ''}
+      </note>`;
+        });
+    }
+
+    treblePart += `
+    </measure>
+  </part>`;
+
+    // Build bass part
+    let bassPart = `
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef>
+          <sign>F</sign>
+          <line>4</line>
+        </clef>
+      </attributes>`;
+
+    if (bassNotes.length === 0) {
+        bassPart += `
+      <note><rest/><duration>4</duration><voice>1</voice><type>whole</type></note>`;
+    } else {
+        bassNotes.forEach(n => {
+            const { step, alter, octave } = midiToPitch(n.midi);
+            bassPart += `
+      <note>
+        <pitch>
+          <step>${step}</step>
+          ${alter ? `<alter>${alter}</alter>` : ''}
+          <octave>${octave}</octave>
+        </pitch>
+        <duration>1</duration>
+        <voice>1</voice>
+        <type>quarter</type>
+        ${alter ? '<accidental>sharp</accidental>' : ''}
+      </note>`;
+        });
+    }
+
+    bassPart += `
+    </measure>
+  </part>`;
+
+    return header + treblePart + bassPart + footer;
+}
+
+function updateLiveStaff() {
+    if (!liveOsmd) return;
+    
+    // Respect settings if available
+    if (typeof settings !== 'undefined' && settings['Show sheet music'] === false) {
+        if (liveStaffContainer) liveStaffContainer.style.display = 'none';
+        return;
+    } else {
+        if (liveStaffContainer) liveStaffContainer.style.display = 'block';
+    }
+    
+    // Debounce updates (prevent spam during rapid note sequences)
+    clearTimeout(updateStaffTimeout);
+    updateStaffTimeout = setTimeout(() => {
+        if (noteHistory.length === 0) {
+            activeNoteIndices.clear();
+            updateNoteHighlights();
+            renderEmptyStaff();
+            return;
+        }
+        
+        // Track which notes are being shown on staff (last 10)
+        activeNoteIndices.clear();
+        for (let i = 0; i < Math.min(10, noteHistory.length); i++) {
+            activeNoteIndices.add(i);
+        }
+        updateNoteHighlights();
+        
+        const xml = buildLiveMusicXML(noteHistory);
+        liveOsmd.load(xml)
+            .then(() => liveOsmd.render())
+            .catch(e => console.warn('OSMD render failed:', e));
+    }, 100);
+}
+
+function updateNoteHighlights() {
+    const listEl = document.getElementById('note-history-list');
+    if (!listEl) return;
+    
+    // Update all note items with active/inactive state
+    Array.from(listEl.children).forEach((noteDiv, index) => {
+        if (activeNoteIndices.has(index)) {
+            noteDiv.classList.add('active-on-staff');
+        } else {
+            noteDiv.classList.remove('active-on-staff');
+        }
+    });
+}
+
+function renderEmptyStaff() {
+    if (!liveOsmd || !liveStaffContainer) return;
+    const emptyXML = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
+<score-partwise version="3.1">
+  <part-list>
+    <score-part id="P1">
+      <part-name>Treble</part-name>
+    </score-part>
+    <score-part id="P2">
+      <part-name>Bass</part-name>
+    </score-part>
+  </part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <note><rest/><duration>4</duration><voice>1</voice><type>whole</type></note>
+    </measure>
+  </part>
+  <part id="P2">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>F</sign><line>4</line></clef>
+      </attributes>
+      <note><rest/><duration>4</duration><voice>1</voice><type>whole</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+    
+    liveOsmd.load(emptyXML)
+        .then(() => liveOsmd.render())
+        .catch(() => {});
+}
+
 // Recording & Playback System
 let recordedNotes = [];
 let isRecording = false;
@@ -962,14 +1152,22 @@ let createGui = function () {
     playerFolder.add(settings, "Show notes").onChange(showNotes);
     playerFolder.add(settings, "Show Ground").onChange(showGround);
     playerFolder.add(settings, "Show sheet music").onChange(function(visible) {
+        // Toggle live staff visibility
+        if (liveStaffContainer) {
+            liveStaffContainer.style.display = visible ? 'block' : 'none';
+        }
+        
+        // Also handle the old OSMD container for MIDI file rendering
         const container = document.getElementById('sheet-music-container');
-        if (visible) {
-            container.style.display = 'block';
-            if (songname && songname[songid % songname.length]) {
-                showSheetMusic(songname[songid % songname.length] + '.mid');
+        if (container) {
+            if (visible) {
+                container.style.display = 'block';
+                if (songname && songname[songid % songname.length]) {
+                    showSheetMusic(songname[songid % songname.length] + '.mid');
+                }
+            } else {
+                hideSheetMusic();
             }
-        } else {
-            hideSheetMusic();
         }
     });
     playerFolder.add(settings, "Open Midi File");
@@ -1258,9 +1456,10 @@ let toggleDualCameras = function(enabled) {
           const octaveStart = 60; // Middle C octave
           const centerKey = octaveStart + 6 - 21; // Center of octave in piano key coordinates
           
-          camera.position.set(centerKey - 25, 85, 15); // Above and slightly in front
-          camera.lookAt(centerKey - 25, pianoFloor, 0);
-          controls.target.set(centerKey - 25, pianoFloor, 0);
+          // Shift camera further left (more negative x) to move scene right in viewport
+          camera.position.set(centerKey - 65, 85, 15); // Changed from -25 to -65 (40 units left)
+          camera.lookAt(centerKey - 65, pianoFloor, 0);
+          controls.target.set(centerKey - 65, pianoFloor, 0);
           controls.update();
           
           console.log('📸 Camera auto-positioned above playing area');
@@ -1372,12 +1571,11 @@ eventjs.add(window, "load", function (event) {
         onsuccess: function () {
             createGui();
             init();
+            initLiveStaff();
             player = MIDI.Player;
             MIDI.setVolume(0, 20);
             // Make settings globally accessible
             window.settings = settings;
-            // Initialize VexFlow sheet music renderer
-            try { initSheetMusic(); } catch(e) { console.warn('Sheet music init failed:', e); }
             // Auto-start dual cameras if enabled
             if (settings['Enable Dual Cameras']) {
                 try { toggleDualCameras(true); } catch(e) { console.warn('Failed to start DualCameraView', e); }
